@@ -1,245 +1,234 @@
-# StayWise — Master Implementation Plan & Execution Specification
-**Full Title:** Explainable Customer Churn Prediction and Retention Intelligence  
-**Author:** Senior ML Engineer & Software Architect  
-**Status:** DRAFT FOR APPROVAL (Phases 1 & 2 Completed)  
-**Environment:** Python 3.11.9 (Windows 64-bit), Scikit-Learn 1.9.1, XGBoost 2.1.4, Streamlit 1.66.0  
+# StayWise — Master Full-Stack Architecture & Implementation Contract
+**Full Title:** Explainable Customer Churn Prediction & Retention Intelligence Platform  
+**System Architecture:** Decoupled Full-Stack Application (React + TypeScript + Tailwind CSS Frontend | FastAPI + Pydantic Backend | Scikit-Learn + XGBoost ML Engine)  
+**Author:** Senior ML & Full-Stack Architect  
+**Status:** DRAFT FOR APPROVAL (Phase 1 Audit & Phase 2 Blueprint Complete)  
+**Date:** 2026-10-15  
 
 ---
 
-## 1. Executive Summary & Workspace Inspection (Phase 1 Report)
+## 1. Phase 1: Workspace & Environment Audit Report
 
-### 1.1 Workspace Audit & Current State
-An inspection of `c:\Users\hp\OneDrive\Documents\StayWise` was conducted prior to making any file modifications:
-* **Operating System:** Windows 10/11 (PowerShell environment)
-* **Python Runtime:** Python 3.11.9 inside dedicated virtual environment `C:\StayWise_env`
-* **Raw Dataset:** Present at `data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv` (7,043 rows, 21 columns, ~970 KB, 26.5% historical churn).
-* **Dependencies Verified:** `pandas 2.3.3`, `numpy 2.4.6`, `scikit-learn 1.9.1`, `xgboost 2.1.4`, `shap 0.51.0`, `streamlit 1.66.0`, `plotly 5.24.1`, `pytest 8.4.2`, `lifelines 0.30.3`.
-* **State of Project:** The codebase has functional scaffolds across `src/`, `pages/`, `app.py`, and `tests/`. Pre-existing tests (85 unit/integration tests) pass. 
-* **Key Observations & Fixes Required:**
-  1. `CalibratedClassifierCV` in scikit-learn >= 1.9 deprecated/removed `cv='prefit'`; cross-validation or `cv=None` calibration handling must remain strictly compliant.
-  2. Windows console emoji encoding (`cp1252`) requires ASCII-safe console outputs.
-  3. Profit-maximizing threshold calculation must use real customer financial metrics (monthly charges and retention window) rather than arbitrary constants to avoid threshold collapse (> 0.90).
-* **Preservation Policy:** All existing verified unit tests, modular separation, and custom transformers must be preserved and aligned to the specification.
+Prior to modifying or architecting any components, an audit of `c:\Users\hp\OneDrive\Documents\StayWise` was executed:
+
+### 1.1 Development Environment & Tooling
+* **Operating System:** Windows 10/11 (64-bit PowerShell)
+* **Python Runtime:** Python 3.11.9 in `C:\StayWise_env\Scripts\python.exe`
+* **Python ML Stack Installed:** `pandas 2.3.3`, `numpy 2.4.6`, `scikit-learn 1.9.1`, `xgboost 2.1.4`, `shap 0.51.0`, `joblib 1.6.0`, `pytest 8.4.2`, `uvicorn 0.54.0`.
+* **Missing Python Packages for Backend:** `fastapi`, `python-multipart` (easily installed via `pip install fastapi python-multipart`).
+* **Node.js / npm Status:** **Not installed** on current system PATH (`winget` is available: `v1.29.380` for clean automated installation of Node.js LTS).
+* **Dataset Status:** Present and verified at `data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv` (7,043 rows, 21 columns, 26.54% churn rate).
+* **Existing ML Codebase:** Modular modules exist in `src/` (`data.py`, `features.py`, `train.py`, `evaluate.py`, `predict.py`, `explain.py`, `roi.py`, `actions.py`, `survival.py`). All 85 unit and integration tests pass.
+* **Preservation Policy:** All existing verified ML algorithms, zero-leakage preprocessing, SHAP explainers, and test suites will be preserved and wrapped seamlessly by the FastAPI service.
 
 ---
 
-## 2. Project Definition (Section 2.1)
+## 2. Section A: Project Specification
 
 ### 2.1 Problem Statement
-Telecommunications providers face continuous customer defection (churn) rate of 20–30% annually. Acquiring a new customer costs 5–7× more than retaining an existing one. Standard churn models often fail in business operations because:
-1. They act as "black boxes" offering probabilities without actionable drivers.
-2. They evaluate models using Accuracy or ROC-AUC, ignoring class imbalance (26.5% churn) and asymmetric business costs.
-3. Retention budgets are wasted targeting customers with standard discounts regardless of individual churn factors or retention ROI.
+Customer defection in telecommunications causes severe recurring revenue contraction. Generic churn systems provide uncalibrated probabilities with no explanation or actionable retention steps. StayWise bridges machine learning and business operations by delivering:
+1. Real-time calibrated churn probability calculation.
+2. Local and global game-theoretic explanations (SHAP attributions).
+3. Value-based retention recommendations calculated through customer lifetime value (CLV) and net offer ROI.
 
-### 2.2 Objectives
-* Develop, train, tune, calibrate, and compare multiple machine learning algorithms (`Logistic Regression`, `Random Forest`, `XGBoost`).
-* Ensure zero data leakage using strictly fit-on-train Scikit-learn pipelines with column transformers.
-* Calibrate probabilities and select optimal decision thresholds via financial utility/profit curves rather than default 0.50.
-* Provide local and global explainability via SHAP (SHapley Additive exPlanations) and feature importances.
-* Deliver an interactive multi-page Streamlit application for executives, retention managers, and data scientists.
+### 2.2 Target Users
+* **Retention Marketing Managers:** Prioritize outbound contact campaigns, evaluate cohort vulnerability, and download enriched CSV action lists.
+* **Customer Success Representatives:** Instant 1-to-1 customer risk diagnosis during support calls with live countermeasure playbooks.
+* **Executive Leadership & Data Scientists:** Model governance, algorithm benchmarking (Logistic Regression vs. Random Forest vs. XGBoost), and overall revenue at risk.
 
 ### 2.3 Scope & Acceptance Criteria
-* **Mandatory Scope:**
-  - Automated cleaning, type coercion (`TotalCharges` blank string handling), and schema validation.
-  - Stratified 3-way split (Train 70%, Validation 15%, Test 15%) with fixed random seed (42).
-  - Cross-validated training and PR-AUC validation ranking.
-  - Model persistence via `joblib` with comprehensive metadata JSON.
-  - Single-customer real-time inference and batch CSV inference with downloadable results.
-  - Interactive What-If simulator and ROI retention policy analysis.
-  - 5-page Streamlit dashboard matching all functional requirements.
-  - Automated test suite covering data, features, train, predict, evaluate, and explainability.
-* **Non-Functional Criteria:**
-  - Single prediction latency < 50ms.
-  - Batch prediction of 1,000 customers < 2s.
-  - Fully runnable offline on local Windows machine without external cloud dependencies.
+* **Mandatory MVP Scope:**
+  - Independent **FastAPI** backend with typed Pydantic v2 schemas, structured logging, and CORS middleware.
+  - Dedicated REST endpoints for data summary, model comparison, active model info, single inference, batch CSV scoring, and SHAP explainability.
+  - Modern, responsive **React + TypeScript + Vite + Tailwind CSS** frontend dashboard.
+  - 5 Interactive Views: (1) Executive Overview, (2) Single Customer Diagnosis & Presets, (3) Model Lab Benchmarking, (4) SHAP Explainability Dashboard, (5) Bulk Customer Risk Explorer.
+  - 100% genuine model execution: zero hardcoded mock predictions or fabricated metrics.
+  - Automated test coverage across ML pipelines, FastAPI endpoints, and frontend components.
 
 ---
 
-## 3. Technology Stack & Rationale (Section 2.2)
+## 3. Section B: System Architecture & Data Flow
 
-| Technology | Version | Purpose & Architectural Rationale |
-|---|---|---|
-| **Python** | 3.11.9 | Core programming language offering optimal performance and modern typing. |
-| **Pandas & NumPy** | 2.3.3 / 2.4.6 | Vectorized tabular data manipulation, matrix operations, and feature transformations. |
-| **Scikit-learn** | 1.9.1 | Preprocessing pipelines (`ColumnTransformer`, `StandardScaler`, `OneHotEncoder`), linear models, tree models, and metric evaluations. |
-| **XGBoost** | 2.1.4 | Extreme gradient boosted decision trees optimized for structured tabular data with native class imbalance handling (`scale_pos_weight`). |
-| **SHAP** | 0.51.0 | Game-theoretic cooperative game explainability for tree models and linear surrogates. |
-| **Streamlit** | 1.66.0 | Rapid local interactive web dashboard framework. |
-| **Plotly** | 5.24.1 | Interactive, client-rendered interactive charts (ROC curves, PR curves, risk distributions, Kaplan-Meier curves). |
-| **Joblib** | 1.6.0 | Atomic serialization and deserialization of fitted pipelines and preprocessors. |
-| **Pytest** | 8.4.2 | Comprehensive unit, edge-case, and end-to-end integration testing. |
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                   StayWise Modern React Frontend                       │
+│    (Vite + TypeScript + Tailwind CSS + Lucide Icons + Recharts)         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ HTTP / JSON (REST)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                     FastAPI Application Backend                        │
+│             (Uvicorn + Pydantic v2 + CORS Middleware)                  │
+├────────────────────────────────────────────────────────────────────────┤
+│  Endpoints:                                                            │
+│  • GET  /api/health            • POST /api/predict/single              │
+│  • GET  /api/data/summary      • POST /api/predict/batch (CSV Upload)  │
+│  • GET  /api/models/comparison • POST /api/explain/customer            │
+│  • GET  /api/models/active     • GET  /api/explain/global              │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Python Object Calls
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                      StayWise ML Pipeline Engine                       │
+│   (Zero-Leakage ColumnTransformer -> Fitted Model -> Calibrator)       │
+│                                                                        │
+│   • Preprocessor: Median Imputer + StandardScaler + OneHotEncoder      │
+│   • Estimator: Best Model (Logistic Regression / XGBoost / RF)         │
+│   • Calibrator: CalibratedClassifierCV (Isotonic)                      │
+│   • Explainability: TreeExplainer / LinearExplainer (SHAP)             │
+│   • Business Logic: Financial Utility & Action Recommendation Engine   │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 4. Dataset Specification & Data Validation (Section 2.3)
+## 4. Section C & D: Dataset & Machine Learning Pipeline
 
 ### 4.1 Dataset Properties
-* **Source:** IBM Telco Customer Churn (Kaggle blastchar/telco-customer-churn)
-* **Location:** `data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv`
-* **Size:** 7,043 rows, 21 columns
-* **Target:** `Churn` (`Yes` -> 1, `No` -> 0). Positive class prevalence: 26.54% (1,869 churners, 5,174 non-churners).
-* **Excluded Feature:** `customerID` (high-cardinality unique string, zero generalizable predictive signal; preserved only as key for batch output).
+* **Source:** IBM Telco Customer Churn (7,043 rows, 21 columns)
+* **Target:** `Churn` (encoded binary: 0 = No, 1 = Yes).
+* **ID Column:** `customerID` (stripped from predictive features; preserved solely for batch tracking).
+* **Cleaning:** `TotalCharges` coerced to numeric; blank spaces imputed via median learned strictly from the training split.
 
-### 4.2 Feature Types & Engineering
-* **Numerical Features (3):**
-  - `tenure` (integer months)
-  - `MonthlyCharges` (float monthly billing)
-  - `TotalCharges` (float cumulative billing; contains 11 blank spaces `" "` for new customers with `tenure == 0`, coerced to `0.0` or imputed via median).
-* **Categorical Features (16):**
-  - Demographics: `gender`, `SeniorCitizen`, `Partner`, `Dependents`
-  - Services: `PhoneService`, `MultipleLines`, `InternetService`, `OnlineSecurity`, `OnlineBackup`, `DeviceProtection`, `TechSupport`, `StreamingTV`, `StreamingMovies`
-  - Account: `Contract`, `PaperlessBilling`, `PaymentMethod`
-* **Engineered Features:**
-  - `tenure_group`: Binning (`0-12m`, `12-24m`, `24-48m`, `48-72m`)
-  - `avg_charges_diff`: `MonthlyCharges - (TotalCharges / max(tenure, 1))` (identifies recent price spikes)
-  - `total_services_count`: Sum of active internet/phone add-on services (proxy for stickiness).
-
-### 4.3 Validation Rules for Uploaded CSVs
-1. Mandatory presence of core feature columns regardless of ordering.
-2. Missing numeric values coerced gracefully or imputed via median learned on train split.
-3. Unknown categorical levels handled safely via `OneHotEncoder(handle_unknown='ignore')`.
+### 4.2 Machine Learning Architecture
+* **Split:** Stratified 70% Train, 15% Validation, 15% Held-out Test.
+* **Leakage Prevention:** Transformers (`SimpleImputer`, `StandardScaler`, `OneHotEncoder`) fitted strictly on `X_train`.
+* **Algorithms Evaluated:**
+  1. **Logistic Regression (L2 regularized, balanced weights)**
+  2. **Random Forest Classifier (300 estimators, balanced weights)**
+  3. **XGBoost Classifier (300 estimators, scale_pos_weight)**
+* **Model Selection:** Ranked by **Validation PR-AUC** (Average Precision) to prioritize positive class ranking under 26.5% class imbalance.
+* **Calibration & Thresholding:** Isotonic calibration applied to align output probabilities; threshold selected by maximizing financial retention utility on validation data.
 
 ---
 
-## 5. Machine Learning Architecture & Workflow (Section 2.4 & 2.5)
+## 5. Section E & F: Model Evaluation & Explainable AI (SHAP)
+
+### 5.1 Measured Benchmark Metrics (Current Fitted Models)
+| Model | 5-Fold CV PR-AUC | Val PR-AUC | Val ROC-AUC | Val F1 | Val Precision | Val Recall |
+|---|---|---|---|---|---|---|
+| **Logistic Regression (Best)** | **0.6695** | **0.6470** | **0.8366** | 0.6224 | 0.5139 | 0.7888 |
+| **XGBoost** | 0.6492 | 0.6306 | 0.8286 | 0.6216 | 0.5442 | 0.7246 |
+| **Random Forest** | 0.6243 | 0.6038 | 0.8179 | 0.5912 | 0.5582 | 0.6283 |
+
+* **Held-out Test Performance:** PR-AUC: `0.6261` | ROC-AUC: `0.8419` | Recall: `95.72%` | F1: `0.5568`.
+
+### 5.2 Explainability Framework
+* **Local Explanations:** SHAP attributions generated for each individual prediction, returned as ranked positive (churn-increasing) and negative (retention-increasing) drivers.
+* **Rule-based Playbook:** Top positive SHAP drivers dynamically trigger targeted business actions (e.g., contract discount, security add-on trial, tech support concierge).
+* **Disclaimers:** Model explanations clearly state correlational feature attribution, not causal proof.
+
+---
+
+## 6. Phase 4: UI/UX Design System Specification
+
+### 6.1 Theme & Design Tokens
+* **Design Aesthetic:** Modern Cyber-SaaS Glassmorphism with deep navy/slate backgrounds and neon cyan highlights.
+* **Palette:**
+  - Background Base: `#080C14` / `#0E1626`
+  - Elevated Glass Surface: `rgba(18, 26, 43, 0.75)` with `1px solid rgba(0, 240, 255, 0.15)`
+  - Accent Primary: `#00F0FF` (Cyan)
+  - Accent Secondary: `#8B5CF6` (Violet)
+  - Risk Low: `#10B981` (Emerald) | Medium: `#F59E0B` (Amber) | High/Critical: `#F43F5E` (Rose)
+* **Typography:** `Plus Jakarta Sans` or `Inter`, high-contrast legible hierarchy.
+* **Micro-interactions:** Glowing hover states, animated risk badges, skeleton loading states during API inference.
+
+### 6.2 Application Views
+1. **Executive Overview Dashboard:** KPI tiles (Total Customers, Churn %, Revenue at Risk, Avg Bill), interactive donut chart, churn by contract/tenure charts.
+2. **Customer Prediction & Diagnosis:** 1-Click Customer Archetypes (High-Risk New User, Loyal Family, At-Risk Streamer), interactive input sliders, animated risk gauge, SHAP driver waterfall, and retention ROI cards.
+3. **Model Laboratory:** Interactive model comparison table, ROC & PR curve visualizer, interactive confusion matrix with dynamic threshold slider.
+4. **Explainability Hub:** Global feature importance ranking, beeswarm attributions, and plain-English factor breakdowns.
+5. **Bulk Customer Risk Explorer:** CSV drag-and-drop zone, schema validation feedback, sortable risk data grid, filter controls, and enriched CSV download.
+
+---
+
+## 7. Phase 5: Backend REST API Specification
+
+### 7.1 Endpoints
+1. `GET /api/health`
+   - Returns: `{"status": "healthy", "model_loaded": bool, "version": "1.0"}`
+2. `GET /api/data/summary`
+   - Returns: Total rows, historical churn rate, revenue at risk, class distribution, contract/tenure breakdowns.
+3. `GET /api/models/comparison`
+   - Returns: Comparison metrics for Logistic Regression, Random Forest, Decision Tree, and XGBoost.
+4. `GET /api/models/active`
+   - Returns: Active model metadata, calibration method, selected threshold, test set metrics.
+5. `POST /api/predict/single`
+   - Request: Single customer demographic and service features (JSON).
+   - Response: `churn_probability`, `churn_prediction`, `risk_tier`, `clv`, `expected_saving`, `recommend_action`.
+6. `POST /api/predict/batch`
+   - Request: Multi-part form data with CSV file upload.
+   - Response: JSON summary + downloadable scored records with risk tier and suggested retention offer.
+7. `POST /api/explain/customer`
+   - Request: Customer feature payload.
+   - Response: Top positive/negative SHAP feature drivers + recommended actions.
+
+---
+
+## 8. Phase 6: Project Directory Structure
 
 ```
-[ Raw CSV ]
-     │
-     ▼
-[ Data Cleaning & Coercion ]  (TotalCharges blank -> numeric, Churn Yes/No -> 1/0)
-     │
-     ▼
-[ Stratified Split ] ──────── (Train 70%, Val 15%, Test 15% | Stratify by y)
-     │
-     ├─── Train Split (Only fit transformers on Train!)
-     │         │
-     │         ▼
-     │   [ Preprocessing Pipeline ]
-     │   ├── Numeric: SimpleImputer(median) -> StandardScaler
-     │   └── Categorical: SimpleImputer(most_frequent) -> OneHotEncoder(ignore_unknown)
-     │         │
-     │         ├──> Fit LogisticRegression(balanced)
-     │         ├──> Fit RandomForestClassifier(balanced)
-     │         └──> Fit XGBClassifier(scale_pos_weight)
-     │
-     ├─── Validation Split
-     │         │
-     │         ▼
-     │   [ Validation Evaluation ] -> Primary Metric: PR-AUC (Average Precision)
-     │   [ Probability Calibration ] -> Isotonic / Sigmoid
-     │   [ Threshold Optimization ] -> Profit / Utility maximization curve
-     │
-     └─── Held-Out Test Split (Untouched until final verification!)
-               │
-               ▼
-         [ Final Test Evaluation ] -> Precision, Recall, F1, PR-AUC, ROC-AUC, Brier Score
+StayWise/
+├── IMPLEMENTATION_PLAN.md             # Master Source of Truth
+├── README.md                          # Production Documentation
+├── .gitignore                         # Comprehensive ignore rules
+├── data/
+│   └── raw/                           # WA_Fn-UseC_-Telco-Customer-Churn.csv
+├── models/
+│   ├── best_pipeline.joblib           # Trained serialized pipeline
+│   └── training_metadata.json         # Real measured metrics
+├── reports/
+│   └── model_comparison.csv          # Algorithm benchmark matrix
+├── src/                               # Core Python ML Engine
+│   ├── data.py                        # Ingestion, cleaning, splitting
+│   ├── features.py                    # Feature engineering
+│   ├── train.py                       # Cross-validation, training, calibration
+│   ├── evaluate.py                    # PR-AUC, ROC-AUC, F1 metrics
+│   ├── predict.py                     # Single & batch inference
+│   ├── explain.py                     # SHAP explanations
+│   ├── roi.py                         # Customer value & financial utility
+│   └── actions.py                     # Rule-based retention interventions
+├── backend/                           # FastAPI Application Service
+│   ├── main.py                        # FastAPI entry point & CORS
+│   ├── schemas.py                     # Pydantic v2 request/response models
+│   ├── routes.py                      # REST route definitions
+│   └── tests/                         # API endpoint pytest suite
+├── frontend/                          # Modern React Application
+│   ├── src/
+│   │   ├── components/                # Glass cards, gauges, charts, badges
+│   │   ├── pages/                     # Overview, Lookup, Lab, Explain, Batch
+│   │   ├── services/                  # API client (Axios/Fetch)
+│   │   ├── types/                     # TypeScript definitions
+│   │   └── App.tsx                    # Shell & navigation
+│   ├── package.json                   # React + Vite dependencies
+│   ├── tailwind.config.js             # Cyber-SaaS design tokens
+│   └── vite.config.ts                 # Build configuration & proxy
+└── tests/                             # Full ML test suite (85 tests passing)
 ```
 
-### 5.1 Primary Metric Justification
-* Standard Accuracy is deceptive (a naive non-churn model achieves 73.5% accuracy with 0 recall).
-* **PR-AUC (Precision-Recall Area Under Curve)** is selected as the primary validation metric because it directly measures positive-class ranking capability under class imbalance without being inflated by true negatives.
+---
 
-### 5.2 Profit Utility Function
-$$\text{Expected Profit}(t) = \sum_{i \in \text{flagged}(t)} \left( \hat{y}_i \cdot \text{SuccessRate} \cdot (\text{CLV}_i) - \text{RetentionCost} \right)$$
-Threshold $t$ is chosen to maximize net profit on the validation set, bounded between $[0.10, 0.80]$.
+## 9. Phase 8: Strict Line-by-Line Execution Checklist
+
+| Task ID | Phase / Component | Description | Prerequisites | Target Files | Verification Method | Status |
+|---|---|---|---|---|---|---|
+| **TASK-101** | Audit | Workspace & toolchain inspection | None | Environment | Node.js & Python check | **COMPLETE** |
+| **TASK-102** | Blueprint | Master Full-Stack Plan creation | TASK-101 | `IMPLEMENTATION_PLAN.md` | Verification of sections A-F | **COMPLETE** |
+| **TASK-201** | Backend Deps | Install FastAPI & Pydantic | TASK-101 | `backend/requirements.txt` | `import fastapi` verification | **NOT STARTED** |
+| **TASK-202** | Backend API | Implement schemas & FastAPI app | TASK-201 | `backend/main.py`, `backend/routes.py` | Pytest backend test suite | **NOT STARTED** |
+| **TASK-301** | Tooling | Setup Node.js runtime for React | TASK-101 | System / Node.js LTS | `node -v` & `npm -v` | **NOT STARTED** |
+| **TASK-302** | Frontend Scaffold | Create React + Vite + Tailwind app | TASK-301 | `frontend/` | `npm run build` zero errors | **NOT STARTED** |
+| **TASK-303** | UI Components | Build Glass Cards, Gauges & Nav | TASK-302 | `frontend/src/components/` | Visual rendering check | **NOT STARTED** |
+| **TASK-304** | Views Assembly | Implement 5 dashboard views | TASK-303 | `frontend/src/pages/` | All pages active & connected | **NOT STARTED** |
+| **TASK-401** | Integration | Connect React to FastAPI backend | TASK-202, 304 | `frontend/src/services/` | End-to-end inference verification | **NOT STARTED** |
+| **TASK-501** | Verification | Automated tests (ML + API + UI) | All | `tests/`, `backend/tests/` | 100% tests passing | **NOT STARTED** |
+| **TASK-601** | Git Push | Commit milestone & push to GitHub | All | Git remote | Clean git status on `main` | **NOT STARTED** |
 
 ---
 
-## 6. Streamlit 5-Page Application Specification (Section 2.6)
+## 10. Phase 9: Approval Gate
 
-1. **Page 1: Executive Dashboard (`pages/01_📊_Overview.py`)**
-   - KPI metric cards: Total Customer Base, Historical Churn Rate, Model Validation PR-AUC, Revenue at Risk.
-   - Churn distribution bar & donut charts.
-   - Cohort analysis by Contract Type, Internet Service, and Tenure Bins.
-   - Clear visual distinction between historical facts and ML model outputs.
-
-2. **Page 2: Customer Prediction & Simulator (`pages/02_🔍_Customer_Lookup.py`)**
-   - Interactive input form for demographic, service, and contract attributes.
-   - Real-time churn probability gauge with color-coded risk tier (Low: <25%, Medium: 25-50%, High: >50%).
-   - Dynamic threshold slider allowing the user to observe classification label changes.
-   - Top 5 local feature contributions explaining why the customer is at risk.
-
-3. **Page 3: What-If & Retention Simulator (`pages/03_🎛️_What_If.py`)**
-   - Scenario modeling: simulate switching month-to-month contracts to 1-year or 2-year.
-   - Simulate adding Tech Support or Online Security.
-   - Expected delta in churn probability and financial savings calculation.
-
-4. **Page 4: High-Risk Cohort Explorer (`pages/04_🚨_Top_At_Risk.py`)**
-   - Batch CSV uploader with instant schema validation and missing-value diagnostics.
-   - Ranked table of top at-risk customers with sorting, filtering, and risk tier badges.
-   - One-click CSV export with customerID, churn probability, recommended action, and ROI.
-
-5. **Page 5: Model Lab & Explainability (`pages/05_🧪_Model_Lab.py`)**
-   - Benchmark comparison table across Logistic Regression, Random Forest, and XGBoost.
-   - Interactive Plotly ROC curves and Precision-Recall curves.
-   - Confusion matrix heatmap with adjustable decision threshold.
-   - Global SHAP feature importance beeswarm and bar summaries.
-
----
-
-## 7. Testing Strategy & Verification Suite (Section 2.8)
-
-Automated tests in `tests/` executed via `pytest`:
-* `tests/test_data.py`: CSV loading, blank string coercion, schema validation, non-empty assertions.
-* `tests/test_features.py`: Feature engineering calculations (`tenure_group`, charge diffs), transformer shape compatibility.
-* `tests/test_train.py`: Stratified split integrity, pipeline fitting, calibration, metadata serialization.
-* `tests/test_predict.py`: Single-row and batch inference, probability bounds $[0, 1]$, unknown categorical handling.
-* `tests/test_roi.py`: Financial utility functions, threshold selection bounds, positive ROI validation.
-* `tests/test_actions.py`: Rule-based retention action recommendations based on feature triggers.
-* `tests/test_batch.py`: End-to-end batch processing of uploaded test CSVs, error handling for corrupted inputs.
-
----
-
-## 8. Master Implementation Task Checklist (Section 2.10)
-
-| Task ID | Component / Objective | Prerequisites | Target Files | Verification Method | Status |
-|---|---|---|---|---|---|
-| **TASK-101** | Workspace audit, Python environment & dependency verification | None | `config.yaml`, `requirements.txt` | Environment list inspection, Python 3.11 check | **COMPLETE** |
-| **TASK-102** | Master Plan Creation & Review | TASK-101 | `IMPLEMENTATION_PLAN.md` | Verification of sections 2.1-2.10 | **COMPLETE** |
-| **TASK-103** | Dataset acquisition & verification | TASK-101 | `download_dataset.py`, `data/raw/` | Row count == 7043, 21 columns | **COMPLETE** |
-| **TASK-201** | Data ingestion, cleaning & schema validator | TASK-103 | `src/data.py` | `pytest tests/test_data.py` | **COMPLETE** |
-| **TASK-202** | Feature engineering & preprocessor pipeline | TASK-201 | `src/features.py` | `pytest tests/test_features.py` | **COMPLETE** |
-| **TASK-301** | Model training (LR, RF, XGB), calibration & selection | TASK-202 | `src/train.py`, `src/evaluate.py` | `pytest tests/test_train.py` | **COMPLETE** |
-| **TASK-302** | Financial threshold optimizer & metric reports | TASK-301 | `src/train.py`, `src/evaluate.py` | Verify PR-AUC and threshold in [0.10, 0.80] | **COMPLETE** |
-| **TASK-401** | Explainability (SHAP & feature importance) | TASK-301 | `src/explain.py` | SHAP calculation on tree & linear models | **COMPLETE** |
-| **TASK-402** | Retention actions & ROI utility engine | TASK-301 | `src/roi.py`, `src/actions.py` | `pytest tests/test_roi.py tests/test_actions.py` | **COMPLETE** |
-| **TASK-403** | Real-time and batch prediction engine | TASK-302 | `src/predict.py` | `pytest tests/test_predict.py tests/test_batch.py` | **COMPLETE** |
-| **TASK-501** | Streamlit multi-page layout & Executive Dashboard | TASK-403 | `app.py`, `pages/01_📊_Overview.py` | Streamlit component load check | **COMPLETE** |
-| **TASK-502** | Customer lookup & real-time risk scoring page | TASK-501 | `pages/02_🔍_Customer_Lookup.py` | Form input & probability rendering | **COMPLETE** |
-| **TASK-503** | What-If simulation & retention counterfactuals | TASK-502 | `pages/03_🎛️_What_If.py` | Slider reactive probability change | **COMPLETE** |
-| **TASK-504** | Customer Risk Explorer & Batch CSV Processor | TASK-503 | `pages/04_🚨_Top_At_Risk.py` | Batch CSV upload & table download | **COMPLETE** |
-| **TASK-505** | Model Lab, benchmark comparisons & SHAP page | TASK-504 | `pages/05_🧪_Model_Lab.py` | ROC/PR curves & SHAP plots | **COMPLETE** |
-| **TASK-601** | Full automated test suite verification | All tasks | `tests/` | `pytest tests/ -v` (85/85 passing) | **COMPLETE** |
-| **TASK-602** | Production model artifacts & final calibration run | TASK-601 | `models/best_pipeline.joblib` | Successful model reload and inference check | **COMPLETE** |
-| **TASK-701** | Documentation, README instructions & run scripts | All tasks | `README.md`, `Makefile` | Manual verification of CLI instructions | **COMPLETE** |
-
----
-
-## 9. Final Measured Metrics & Verification Report
-
-* **Execution Date:** 2026-10-15
-* **Hardware & Runtime:** Windows 10/11, Python 3.11.9, Scikit-learn 1.9.1, XGBoost 2.1.4
-* **Dataset:** IBM Telco Customer Churn (7,043 rows, 21 columns, 26.54% historical churn)
-
-### 9.1 Model Benchmark Comparison Table
-| Algorithm | Train Time | 5-Fold CV PR-AUC | Val PR-AUC | Val ROC-AUC | Val F1 | Val Precision | Val Recall |
-|---|---|---|---|---|---|---|---|
-| **Logistic Regression (Selected)** | 2.93s | **0.6695** | **0.6470** | **0.8366** | 0.6224 | 0.5139 | 0.7888 |
-| **XGBoost** | 2.79s | 0.6492 | 0.6306 | 0.8286 | 0.6216 | 0.5442 | 0.7246 |
-| **Random Forest** | 3.65s | 0.6243 | 0.6038 | 0.8179 | 0.5912 | 0.5582 | 0.6283 |
-| **Decision Tree** | 2.25s | 0.5323 | 0.5388 | 0.7856 | 0.6009 | 0.5133 | 0.7246 |
-
-### 9.2 Held-Out Test Set Results (Untouched during training)
-* **Calibration Method:** Isotonic Regression (`CalibratedClassifierCV`)
-* **Optimal Profit Threshold:** `0.060`
-* **Test PR-AUC:** `0.6261`
-* **Test ROC-AUC:** `0.8419`
-* **Test Recall:** `95.72%` (268 of 280 churners detected)
-* **Test F1-Score:** `0.5568`
-* **Test Accuracy:** `59.55%`
-
-### 9.3 Test Suite Status
-* **Automated Tests:** 85/85 Passing (`pytest tests/ -v` executed in 4.78 seconds)
-* **Application Status:** Streamlit server running locally at `http://localhost:8501` (HTTP 200 OK)
-
+In accordance with strict execution protocol:
+1. Phase 1 (Workspace inspection & environment constraints recorded) and Phase 2 (Creation of comprehensive blueprint) are complete.
+2. The plan describes the full-stack architecture, exact data flow, Pydantic endpoints, UI design tokens, and ordered task checklist.
+3. **Awaiting User Review and Approval** before proceeding to execution!
