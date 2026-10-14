@@ -1,0 +1,59 @@
+# ─── Virtual environments ────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+
+# ─── Dataset (do not commit raw data) ───────────────────────────────────────
+data/raw/
+data/processed/
+
+# ─── Trained models and reports ──────────────────────────────────────────────
+models/*.joblib
+models/*.pkl
+reports/*.csv
+reports/*.png
+reports/*.html
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ─── Virtual environments ────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ─── Jupyter ─────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ─── IDE ─────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── Streamlit cache ─────────────────────────────────────────────────────────
+.streamlit/
+
+# ─── Env files ───────────────────────────────────────────────────────────────
+.env
+.env.*
+
+# ─── Pytest cache ────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
