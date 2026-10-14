@@ -216,8 +216,30 @@ Automated tests in `tests/` executed via `pytest`:
 
 ---
 
-## 9. Next Steps & Approval Gate
-As specified by the Master Instruction Document:
-* Phase 1 (Workspace inspection) and Phase 2 (Creation of `IMPLEMENTATION_PLAN.md`) are complete.
-* The plan is validated, executable on Windows PowerShell, and fully aligned with the strict line-by-line requirements.
-* Awaiting User Review and Approval before progressing to the subsequent milestone checkpoints.
+## 9. Final Measured Metrics & Verification Report
+
+* **Execution Date:** 2026-10-15
+* **Hardware & Runtime:** Windows 10/11, Python 3.11.9, Scikit-learn 1.9.1, XGBoost 2.1.4
+* **Dataset:** IBM Telco Customer Churn (7,043 rows, 21 columns, 26.54% historical churn)
+
+### 9.1 Model Benchmark Comparison Table
+| Algorithm | Train Time | 5-Fold CV PR-AUC | Val PR-AUC | Val ROC-AUC | Val F1 | Val Precision | Val Recall |
+|---|---|---|---|---|---|---|---|
+| **Logistic Regression (Selected)** | 2.93s | **0.6695** | **0.6470** | **0.8366** | 0.6224 | 0.5139 | 0.7888 |
+| **XGBoost** | 2.79s | 0.6492 | 0.6306 | 0.8286 | 0.6216 | 0.5442 | 0.7246 |
+| **Random Forest** | 3.65s | 0.6243 | 0.6038 | 0.8179 | 0.5912 | 0.5582 | 0.6283 |
+| **Decision Tree** | 2.25s | 0.5323 | 0.5388 | 0.7856 | 0.6009 | 0.5133 | 0.7246 |
+
+### 9.2 Held-Out Test Set Results (Untouched during training)
+* **Calibration Method:** Isotonic Regression (`CalibratedClassifierCV`)
+* **Optimal Profit Threshold:** `0.060`
+* **Test PR-AUC:** `0.6261`
+* **Test ROC-AUC:** `0.8419`
+* **Test Recall:** `95.72%` (268 of 280 churners detected)
+* **Test F1-Score:** `0.5568`
+* **Test Accuracy:** `59.55%`
+
+### 9.3 Test Suite Status
+* **Automated Tests:** 85/85 Passing (`pytest tests/ -v` executed in 4.78 seconds)
+* **Application Status:** Streamlit server running locally at `http://localhost:8501` (HTTP 200 OK)
+
