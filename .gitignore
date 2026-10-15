@@ -1,59 +1,23 @@
-# ─── Virtual environments ────────────────────────────────────────────────────
-venv/
+# Virtual Environment
 .venv/
+venv/
+ENV/
 env/
-.env/
 
-# ─── Dataset (do not commit raw data) ───────────────────────────────────────
-data/raw/
-data/processed/
-
-# ─── Trained models and reports ──────────────────────────────────────────────
-models/*.joblib
-models/*.pkl
-reports/*.csv
-reports/*.png
-reports/*.html
-
-# ─── Python ──────────────────────────────────────────────────────────────────
+# Python bytecode & cache
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-*.egg
+*$py.class
+*.so
 
-# ─── Virtual environments ────────────────────────────────────────────────────
-venv/
-.venv/
-env/
-ENV/
-
-# ─── Jupyter ─────────────────────────────────────────────────────────────────
-.ipynb_checkpoints/
-*.ipynb_checkpoints
-
-# ─── IDE ─────────────────────────────────────────────────────────────────────
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# ─── OS ──────────────────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-
-# ─── Streamlit cache ─────────────────────────────────────────────────────────
-.streamlit/
-
-# ─── Env files ───────────────────────────────────────────────────────────────
-.env
-.env.*
-
-# ─── Pytest cache ────────────────────────────────────────────────────────────
+# Testing & Coverage
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Model artifacts (optional - keep models directory tracked)
+# models/*.joblib
+
+# OS generated files
+.DS_Store
+Thumbs.db
