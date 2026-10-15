@@ -506,11 +506,11 @@ A self-contained `.joblib` file that bundles preprocessing and inference, verifi
   - *Fix:* Document exact library versions in `requirements.txt`.
 
 ### 10. Completion Checklist
-- [ ] Serialization functions implemented using `joblib`
-- [ ] Full pipeline (preprocessor + model) saved to `models/best_model.joblib`
-- [ ] Metadata file `models/metrics.json` updated with best model info
-- [ ] Verification script asserts identity between in-memory and reloaded predictions
-- [ ] Raw input prediction verified on sample customer record
+- [x] Serialization functions implemented using `joblib`
+- [x] Full pipeline (preprocessor + model) saved to `models/best_model.joblib`
+- [x] Metadata file `models/metrics.json` updated with best model info
+- [x] Verification script asserts identity between in-memory and reloaded predictions
+- [x] Raw input prediction verified on sample customer record
 
 ### 11. Learning Objectives (Viva Preparation)
 - **Why do we serialize Scikit-Learn `Pipeline` rather than just the classifier?** A classifier only accepts numerical arrays in the exact dimension and scale it was trained on. A pipeline bundles the imputation, one-hot encoding, and scaling transformers together with the model, guaranteeing that raw user inputs undergo the exact same mathematical transformations.

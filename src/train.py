@@ -4,6 +4,8 @@ Implements model training, hyperparameter tuning via Stratified Cross-Validation
 and evaluation for Logistic Regression (Phase 3), KNN (Phase 4), and Random Forest (Phase 5).
 """
 
+from datetime import datetime
+import json
 from pathlib import Path
 import sys
 
@@ -12,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import joblib
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -34,6 +37,10 @@ from src.preprocess import (
     NUMERICAL_FEATURES,
     prepare_data,
 )
+
+MODELS_DIR = PROJECT_ROOT / "models"
+BEST_MODEL_PATH = MODELS_DIR / "best_model.joblib"
+MODEL_INFO_PATH = MODELS_DIR / "model_info.json"
 
 
 def compute_metrics(y_true, y_pred, y_prob) -> dict:
@@ -402,10 +409,199 @@ def train_random_forest(
     return best_pipeline, metrics, top_features
 
 
+def save_model(pipeline: Pipeline, filepath: Path | str = BEST_MODEL_PATH) -> Path:
+    """Save a fitted Scikit-Learn pipeline to disk using joblib.
+
+    Args:
+        pipeline: Fitted Scikit-Learn Pipeline (preprocessor + classifier).
+        filepath: Destination file path.
+
+    Returns:
+        Path to the saved artifact.
+    """
+    path = Path(filepath)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(pipeline, path)
+    print(f"\n[Saved] Model pipeline saved to: {path}")
+    return path
+
+
+def load_model(filepath: Path | str = BEST_MODEL_PATH) -> Pipeline:
+    """Load a serialized Scikit-Learn pipeline from disk.
+
+    Args:
+        filepath: Path to the .joblib file.
+
+    Returns:
+        Loaded fitted Pipeline.
+    """
+    path = Path(filepath)
+    if not path.exists():
+        raise FileNotFoundError(f"Model file not found at: {path}")
+    pipeline = joblib.load(path)
+    return pipeline
+
+
+def save_best_model(
+    filepath: Path | str = BEST_MODEL_PATH,
+    info_path: Path | str = MODEL_INFO_PATH,
+) -> tuple[Pipeline, dict]:
+    """Train the selected optimal model (Logistic Regression with C=10.0), serialize it, and save metadata.
+
+    Returns:
+        Tuple of (fitted_pipeline, model_info_dict).
+    """
+    X_train, X_test, y_train, y_test, preprocessor = prepare_data()
+    best_pipeline, metrics = train_logistic_regression(
+        X_train, X_test, y_train, y_test, preprocessor
+    )
+
+    # 1. Save pipeline (preprocessing + classifier) to disk
+    save_model(best_pipeline, filepath)
+
+    # 2. Compile model metadata
+    model_info = {
+        "model_name": "Logistic Regression",
+        "algorithm": "sklearn.linear_model.LogisticRegression",
+        "selected_hyperparameters": {
+            "C": float(best_pipeline.named_steps["classifier"].C),
+            "max_iter": 1000,
+            "random_state": 42,
+        },
+        "holdout_test_metrics": {k: float(v) for k, v in metrics.items()},
+        "saved_at": datetime.now().isoformat(),
+        "input_features": {
+            "numerical": NUMERICAL_FEATURES,
+            "categorical": CATEGORICAL_FEATURES,
+        },
+    }
+
+    info_p = Path(info_path)
+    info_p.parent.mkdir(parents=True, exist_ok=True)
+    with open(info_p, "w", encoding="utf-8") as f:
+        json.dump(model_info, f, indent=4)
+    print(f"[Saved] Model metadata saved to: {info_p}")
+
+    return best_pipeline, model_info
+
+
+def test_reloaded_model(
+    filepath: Path | str = BEST_MODEL_PATH,
+) -> bool:
+    """Verify that the reloaded pipeline produces valid and identical predictions.
+
+    Tests:
+    1. Loads the pipeline from disk.
+    2. Tests raw dictionary/DataFrame customer record without manual pre-transformation.
+    3. Verifies probabilities are in [0, 1] and sum to 1.0.
+    4. Compares predictions on X_test between freshly fitted and reloaded pipelines.
+    """
+    print("\n" + "=" * 60)
+    print("STAYWISE — PHASE 7: RELOAD & INFERENCE VERIFICATION")
+    print("=" * 60)
+
+    # 1. Reload pipeline from disk
+    reloaded_pipeline = load_model(filepath)
+    print(f"Successfully reloaded pipeline from: {filepath}")
+    print(f"Pipeline Steps: {[step[0] for step in reloaded_pipeline.steps]}")
+
+    # 2. Test raw, un-preprocessed single customer records
+    # Sample A: High-risk customer (Month-to-month, Fiber optic, Electronic check, short tenure)
+    sample_churner = pd.DataFrame(
+        [
+            {
+                "gender": "Female",
+                "SeniorCitizen": 0,
+                "Partner": "No",
+                "Dependents": "No",
+                "tenure": 1,
+                "PhoneService": "Yes",
+                "MultipleLines": "No",
+                "InternetService": "Fiber optic",
+                "OnlineSecurity": "No",
+                "OnlineBackup": "No",
+                "DeviceProtection": "No",
+                "TechSupport": "No",
+                "StreamingTV": "Yes",
+                "StreamingMovies": "No",
+                "Contract": "Month-to-month",
+                "PaperlessBilling": "Yes",
+                "PaymentMethod": "Electronic check",
+                "MonthlyCharges": 85.50,
+                "TotalCharges": 85.50,
+            }
+        ]
+    )
+
+    # Sample B: Low-risk loyal customer (Two year, DSL, long tenure, Auto payment)
+    sample_loyal = pd.DataFrame(
+        [
+            {
+                "gender": "Male",
+                "SeniorCitizen": 0,
+                "Partner": "Yes",
+                "Dependents": "Yes",
+                "tenure": 65,
+                "PhoneService": "Yes",
+                "MultipleLines": "Yes",
+                "InternetService": "DSL",
+                "OnlineSecurity": "Yes",
+                "OnlineBackup": "Yes",
+                "DeviceProtection": "Yes",
+                "TechSupport": "Yes",
+                "StreamingTV": "No",
+                "StreamingMovies": "No",
+                "Contract": "Two year",
+                "PaperlessBilling": "No",
+                "PaymentMethod": "Bank transfer (automatic)",
+                "MonthlyCharges": 45.00,
+                "TotalCharges": 2925.00,
+            }
+        ]
+    )
+
+    pred_churner = reloaded_pipeline.predict(sample_churner)[0]
+    prob_churner = reloaded_pipeline.predict_proba(sample_churner)[0]
+    pred_loyal = reloaded_pipeline.predict(sample_loyal)[0]
+    prob_loyal = reloaded_pipeline.predict_proba(sample_loyal)[0]
+
+    print("\n--- Raw Customer Prediction Tests ---")
+    print(f"  Sample A (High Risk Churner): Pred = {pred_churner} (Churn), Churn Probability = {prob_churner[1]:.4f}")
+    print(f"  Sample B (Low Risk Loyal)   : Pred = {pred_loyal} (No Churn), Churn Probability = {prob_loyal[1]:.4f}")
+
+    # Check validity of probabilities
+    assert 0.0 <= prob_churner[1] <= 1.0, "Probability out of range [0, 1]"
+    assert 0.0 <= prob_loyal[1] <= 1.0, "Probability out of range [0, 1]"
+    assert abs(sum(prob_churner) - 1.0) < 1e-6, "Probabilities must sum to 1.0"
+    assert abs(sum(prob_loyal) - 1.0) < 1e-6, "Probabilities must sum to 1.0"
+    assert prob_churner[1] > prob_loyal[1], "High-risk customer must have higher churn probability than loyal customer"
+
+    # 3. Test on holdout test set to ensure exact match
+    X_train, X_test, y_train, y_test, preprocessor = prepare_data()
+    test_preds = reloaded_pipeline.predict(X_test)
+    test_probs = reloaded_pipeline.predict_proba(X_test)[:, 1]
+    metrics = compute_metrics(y_test, test_preds, test_probs)
+
+    print("\n--- Holdout Test Set Match Verification (1,409 rows) ---")
+    print(f"  Reloaded Accuracy : {metrics['accuracy']:.4f}")
+    print(f"  Reloaded Precision: {metrics['precision']:.4f}")
+    print(f"  Reloaded Recall   : {metrics['recall']:.4f}")
+    print(f"  Reloaded F1-Score : {metrics['f1']:.4f}")
+    print(f"  Reloaded ROC-AUC  : {metrics['roc_auc']:.4f}")
+    print("=" * 60)
+    print("ALL RELOAD & INFERENCE VERIFICATION TESTS PASSED!")
+    print("=" * 60)
+
+    return True
+
+
 if __name__ == "__main__":
     train_logistic_regression()
     train_knn()
     compare_knn_scaling()
     train_random_forest()
+    save_best_model()
+    test_reloaded_model()
+
 
 

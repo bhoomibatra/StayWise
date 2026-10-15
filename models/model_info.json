@@ -1,0 +1,42 @@
+{
+    "model_name": "Logistic Regression",
+    "algorithm": "sklearn.linear_model.LogisticRegression",
+    "selected_hyperparameters": {
+        "C": 10.0,
+        "max_iter": 1000,
+        "random_state": 42
+    },
+    "holdout_test_metrics": {
+        "accuracy": 0.8055358410220014,
+        "precision": 0.6572327044025157,
+        "recall": 0.5588235294117647,
+        "f1": 0.6040462427745664,
+        "roc_auc": 0.8410912190963341
+    },
+    "saved_at": "2026-10-15T23:42:59.402679",
+    "input_features": {
+        "numerical": [
+            "tenure",
+            "MonthlyCharges",
+            "TotalCharges"
+        ],
+        "categorical": [
+            "gender",
+            "SeniorCitizen",
+            "Partner",
+            "Dependents",
+            "PhoneService",
+            "MultipleLines",
+            "InternetService",
+            "OnlineSecurity",
+            "OnlineBackup",
+            "DeviceProtection",
+            "TechSupport",
+            "StreamingTV",
+            "StreamingMovies",
+            "Contract",
+            "PaperlessBilling",
+            "PaymentMethod"
+        ]
+    }
+}
