@@ -1,7 +1,7 @@
 """Model Training Module for StayWise ML Lab Project.
 
 Implements model training, hyperparameter tuning via Stratified Cross-Validation,
-and evaluation for Logistic Regression (Phase 3).
+and evaluation for Logistic Regression (Phase 3), KNN (Phase 4), and Random Forest (Phase 5).
 """
 
 from pathlib import Path
@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import (
@@ -280,8 +281,131 @@ def compare_knn_scaling(
     return unscaled_metrics
 
 
+def train_random_forest(
+    X_train=None,
+    X_test=None,
+    y_train=None,
+    y_test=None,
+    preprocessor=None,
+) -> tuple[Pipeline, dict, list[tuple[str, float]]]:
+    """Train and evaluate a Random Forest Classifier with 5-fold CV hyperparameter tuning.
+
+    Steps:
+    1. Bundle the unfitted preprocessor and RandomForestClassifier into a Scikit-Learn Pipeline.
+    2. Tune n_estimators in [50, 100] and max_depth in [5, 10] using 5-Fold Stratified CV on X_train.
+    3. Fit the optimal pipeline on the full training set.
+    4. Predict classes and class probabilities on the holdout test set (X_test).
+    5. Inspect training vs test metrics to detect potential overfitting.
+    6. Extract and rank feature importances using get_feature_names_out().
+    7. Compute and report holdout metrics.
+
+    Args:
+        X_train: Optional pre-loaded training features.
+        X_test: Optional pre-loaded test features.
+        y_train: Optional pre-loaded training target.
+        y_test: Optional pre-loaded test target.
+        preprocessor: Optional unfitted ColumnTransformer.
+
+    Returns:
+        Tuple of (fitted_pipeline, metrics_dict, top_features_list).
+    """
+    if any(arg is None for arg in (X_train, X_test, y_train, y_test, preprocessor)):
+        X_train, X_test, y_train, y_test, preprocessor = prepare_data()
+
+    base_pipeline = Pipeline(
+        steps=[
+            ("preprocessor", preprocessor),
+            ("classifier", RandomForestClassifier(random_state=42)),
+        ]
+    )
+
+    # Search space: tree count and maximum depth
+    param_grid = {
+        "classifier__n_estimators": [50, 100],
+        "classifier__max_depth": [5, 10],
+    }
+
+    cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    grid_search = GridSearchCV(
+        estimator=base_pipeline,
+        param_grid=param_grid,
+        scoring="roc_auc",
+        cv=cv_strategy,
+        n_jobs=-1,
+        return_train_score=True,
+    )
+
+    print("=" * 60)
+    print("STAYWISE — PHASE 5: RANDOM FOREST TRAINING")
+    print("=" * 60)
+    print("Running 5-fold Stratified Cross-Validation on training data...")
+    grid_search.fit(X_train, y_train)
+
+    print("\n--- Cross-Validation Results by Parameter Combination ---")
+    for mean_val, std_val, mean_train, params in zip(
+        grid_search.cv_results_["mean_test_score"],
+        grid_search.cv_results_["std_test_score"],
+        grid_search.cv_results_["mean_train_score"],
+        grid_search.cv_results_["params"],
+    ):
+        n_est = params["classifier__n_estimators"]
+        depth = params["classifier__max_depth"]
+        print(
+            f"  n_estimators = {n_est:<3}, max_depth = {depth:<2} -> "
+            f"Mean Val ROC-AUC: {mean_val:.4f} (+/- {std_val:.4f}) | Train ROC-AUC: {mean_train:.4f}"
+        )
+
+    best_pipeline = grid_search.best_estimator_
+    best_params = grid_search.best_params_
+    print(f"\nOptimal Hyperparameters: {best_params}")
+
+    # Evaluate on train set vs test set to inspect overfitting
+    y_train_pred = best_pipeline.predict(X_train)
+    y_train_prob = best_pipeline.predict_proba(X_train)[:, 1]
+    train_metrics = compute_metrics(y_train, y_train_pred, y_train_prob)
+
+    # Evaluate on holdout test set (X_test, y_test)
+    y_pred = best_pipeline.predict(X_test)
+    y_prob = best_pipeline.predict_proba(X_test)[:, 1]
+    metrics = compute_metrics(y_test, y_pred, y_prob)
+
+    print("\n--- Overfitting Inspection (Train vs Holdout Test) ---")
+    print(f"  Train Accuracy: {train_metrics['accuracy']:.4f} | Test Accuracy: {metrics['accuracy']:.4f}")
+    print(f"  Train ROC-AUC : {train_metrics['roc_auc']:.4f} | Test ROC-AUC : {metrics['roc_auc']:.4f}")
+    print(f"  Train F1-Score: {train_metrics['f1']:.4f} | Test F1-Score: {metrics['f1']:.4f}")
+
+    print("\n--- Holdout Test Set Evaluation (1,409 rows) ---")
+    print(f"  Accuracy  : {metrics['accuracy']:.4f}  (Overall correct classifications)")
+    print(f"  Precision : {metrics['precision']:.4f}  (When predicting Churn, how often right)")
+    print(f"  Recall    : {metrics['recall']:.4f}  (Out of actual churners, how many caught)")
+    print(f"  F1-Score  : {metrics['f1']:.4f}  (Harmonic balance of precision & recall)")
+    print(f"  ROC-AUC   : {metrics['roc_auc']:.4f}  (Ranking separation across all thresholds)")
+
+    # Extract feature importances
+    fitted_preprocessor = best_pipeline.named_steps["preprocessor"]
+    classifier = best_pipeline.named_steps["classifier"]
+    feature_names = fitted_preprocessor.get_feature_names_out()
+    importances = classifier.feature_importances_
+
+    feature_ranking = sorted(
+        zip(feature_names, importances),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    top_features = [(name, float(score)) for name, score in feature_ranking[:10]]
+
+    print("\n--- Top 10 Most Influential Features ---")
+    for rank, (name, imp) in enumerate(top_features, 1):
+        print(f"  {rank:>2}. {name:<40}: {imp:.4f}")
+    print("=" * 60)
+
+    return best_pipeline, metrics, top_features
+
+
 if __name__ == "__main__":
     train_logistic_regression()
     train_knn()
     compare_knn_scaling()
+    train_random_forest()
+
 

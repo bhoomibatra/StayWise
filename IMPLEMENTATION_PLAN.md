@@ -380,11 +380,11 @@ A tuned Random Forest model with CV evaluation, holdout test performance metrics
   - *Fix:* Use `preprocessor.get_feature_names_out()` to correctly label encoded features.
 
 ### 10. Completion Checklist
-- [ ] Random Forest pipeline built with preprocessing
-- [ ] 5-fold CV grid search over `n_estimators` and `max_depth`
-- [ ] Best model selected and evaluated on holdout test set
-- [ ] Top 10 feature importances extracted with correct feature names
-- [ ] Training vs. test performance inspected for overfitting
+- [x] Random Forest pipeline built with preprocessing
+- [x] 5-fold CV grid search over `n_estimators` and `max_depth`
+- [x] Best model selected and evaluated on holdout test set
+- [x] Top 10 feature importances extracted with correct feature names
+- [x] Training vs. test performance inspected for overfitting
 
 ### 11. Learning Objectives (Viva Preparation)
 - **What is the difference between Bagging and Boosting?** Bagging (Bootstrap Aggregation, used in Random Forest) trains multiple trees in parallel on random bootstrap samples of data and averages their predictions to reduce variance. Boosting trains trees sequentially, each focusing on correcting errors made by previous trees to reduce bias.
