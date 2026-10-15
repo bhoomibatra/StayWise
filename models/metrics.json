@@ -1,0 +1,27 @@
+{
+    "metrics_summary": {
+        "Logistic Regression": {
+            "accuracy": 0.8055358410220014,
+            "precision": 0.6572327044025157,
+            "recall": 0.5588235294117647,
+            "f1": 0.6040462427745664,
+            "roc_auc": 0.8410912190963341
+        },
+        "K-Nearest Neighbors": {
+            "accuracy": 0.7799858055358411,
+            "precision": 0.5893854748603352,
+            "recall": 0.5641711229946524,
+            "f1": 0.5765027322404371,
+            "roc_auc": 0.8272107261877082
+        },
+        "Random Forest": {
+            "accuracy": 0.7934705464868701,
+            "precision": 0.6751054852320675,
+            "recall": 0.42780748663101603,
+            "f1": 0.5237315875613748,
+            "roc_auc": 0.8397039448190342
+        }
+    },
+    "best_model": "Logistic Regression",
+    "selection_rationale": "In customer churn prediction, Recall is critical to minimize False Negatives (failing to identify customers who cancel). Logistic Regression captures 55.88% of churners compared to Random Forest's 42.78%, achieving a superior F1-score (0.6040 vs 0.5237) and highest ROC-AUC (0.8411 vs 0.8397). It is also transparent, computationally lightweight, and produces well-calibrated odds ratios."
+}

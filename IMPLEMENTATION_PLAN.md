@@ -445,12 +445,12 @@ A unified metrics comparison table, saved evaluation charts, and a clear, eviden
   - *Fix:* Emphasize F1-score and ROC-AUC, explaining why Recall is critical in churn prediction.
 
 ### 10. Completion Checklist
-- [ ] `src/evaluate.py` implemented
-- [ ] Metrics table compiled across all three models
-- [ ] Confusion matrices plotted and saved
-- [ ] ROC curves plotted with AUC scores
-- [ ] Trade-off between Precision and Recall documented for churn context
-- [ ] Best model selected based on empirical metrics
+- [x] `src/evaluate.py` implemented
+- [x] Metrics table compiled across all three models
+- [x] Confusion matrices plotted and saved
+- [x] ROC curves plotted with AUC scores
+- [x] Trade-off between Precision and Recall documented for churn context
+- [x] Best model selected based on empirical metrics
 
 ### 11. Learning Objectives (Viva Preparation)
 - **Why is ROC-AUC better than Accuracy for imbalanced data?** Accuracy rewards predicting the majority class regardless of ability to identify minority cases. ROC-AUC evaluates the model's ability to rank positive instances higher than negative instances across all possible decision thresholds, making it invariant to class distribution.
