@@ -1,6 +1,16 @@
-# 📡 StayWise — Customer Churn Prediction and Retention Intelligence
+# 📡 StayWise — Customer Churn Intelligence and Retention Management Platform
 
-**An end-to-end machine learning project for customer churn prediction, built as part of a college ML lab using Python and Scikit-learn.**
+**An enterprise customer churn intelligence, 360° subscriber analytics, and retention action management platform powered by Scikit-learn, FastAPI, SQLite, and React.**
+
+> **🚀 Enterprise Platform Quickstart:**
+> ```bash
+> # 1. Launch Enterprise Application (FastAPI + React Production SPA)
+> .\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+> # Open in browser: http://127.0.0.1:8000
+>
+> # 2. (Optional) Run Streamlit Legacy Fallback
+> .\.venv\Scripts\streamlit.exe run app.py
+> ```
 
 ---
 
