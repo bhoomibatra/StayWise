@@ -12,10 +12,11 @@ StayWise is an educational, end-to-end Machine Learning laboratory project desig
 The core goal of StayWise is to demonstrate the fundamental Machine Learning workflow in an authentic, transparent, and beginner-friendly manner:
 1. **Problem Formulation:** Binary classification (Will the customer churn? Yes / No).
 2. **Exploration & Preprocessing:** Data hygiene, handling hidden missing values, categorical encoding, feature scaling, and preventing data leakage.
-3. **Model Training & Comparison:** Training and tuning three foundational algorithms:
+3. **Model Training & Comparison:** Training and tuning four foundational algorithms:
    - **Logistic Regression** (Linear baseline with probability calibration and odds interpretability)
    - **K-Nearest Neighbors (KNN)** (Instance-based non-parametric classifier highlighting distance metrics and feature scaling)
    - **Random Forest** (Ensemble tree-based method highlighting bagging, non-linearity, and feature importance)
+   - **Support Vector Machine (SVM)** (Maximum-margin linear classifier highlighting hyperplane optimization, margin maximization, and support vectors)
 4. **Rigorous Evaluation:** Comparing models fairly on a shared holdout test set using Accuracy, Precision, Recall, F1-Score, and ROC-AUC.
 5. **Operationalization:** Exporting a unified preprocessing + model pipeline using `joblib` and serving it via a clean **Streamlit** web interface for interactive single-customer predictions and lab demonstrations.
 
@@ -392,10 +393,57 @@ A tuned Random Forest model with CV evaluation, holdout test performance metrics
 
 ---
 
+## Phase 5B — Support Vector Machine (SVM)
+
+### 1. Objective
+Implement, train, tune, and evaluate **Support Vector Machine (SVM)** (`SVC` with `kernel="linear"`), exploring maximum-margin hyperplane principles, tuning the regularization parameter $C$ via Stratified Cross-Validation on the training set, and assessing performance on the holdout test set.
+
+### 2. Prerequisites
+- Phases 2 through 5 completed.
+
+### 3. Tasks
+1. Extend `src/train.py` with `train_svm()`.
+2. Construct a pipeline bundling `preprocessor` (which standardizes continuous features and one-hot encodes categoricals) with `SVC(kernel="linear", probability=True, random_state=42)`.
+3. Perform 5-fold Stratified Cross-Validation tuning over regularization parameter $C \in [0.1, 1.0, 10.0]$ on `X_train`.
+4. Fit the best SVM pipeline on the full training set.
+5. Predict test labels and class probabilities on `X_test`.
+6. Compute and record test metrics: Accuracy, Precision, Recall, F1, and ROC-AUC.
+
+### 4. Files
+- `src/train.py` (Modified to add `train_svm()`)
+
+### 5. Implementation Guidance
+- SVM seeks a decision boundary (hyperplane) that maximizes the geometric margin between the two classes.
+- Support vectors are the data points lying closest to the hyperplane; only these points determine the boundary position.
+- Setting `probability=True` enables Platt scaling (internal cross-validation) so probabilities can be evaluated for ROC-AUC and Streamlit confidence readouts.
+- The regularization parameter $C$ controls the trade-off between maximizing the margin and minimizing classification errors. A smaller $C$ (e.g. 0.1) creates a wider margin with more tolerance for misclassifications (regularization).
+
+### 6. Commands
+```bash
+python -c "from src.train import train_svm; svm_pipeline, metrics = train_svm(); print('SVM Metrics:', metrics)"
+```
+
+### 7. Verification
+- 5-fold CV runs and selects the optimal $C$ (optimal: $C=0.1$).
+- Test set metrics: Accuracy ~78.85%, Recall ~52.94%, Precision ~61.88%, F1 ~0.5706, ROC-AUC ~0.8266.
+
+### 8. Completion Checklist
+- [x] SVM pipeline built using `SVC(kernel='linear', probability=True, random_state=42)`
+- [x] 5-fold Stratified CV grid search over $C \in [0.1, 1.0, 10.0]$
+- [x] Best model selected and evaluated on holdout test set
+- [x] Test metrics recorded and compared
+
+### 9. Learning Objectives (Viva Preparation)
+- **What is a Hyperplane and Margin?** In an $n$-dimensional space, a hyperplane is a flat affine subspace of dimension $n-1$ given by $w^T x + b = 0$. The margin is the perpendicular distance between the hyperplane and the closest data points of any class.
+- **Why does SVM require feature scaling?** SVM maximizes the geometric margin in Euclidean space. If one unscaled feature has values in thousands while others are binary (0/1), the distance is dominated by the large feature, distorting the hyperplane orientation.
+- **Why did SVM perform moderately on this dataset?** Telco churn features have significant overlap and non-linear patterns; linear SVM without heavy slack or kernel transformation draws a rigid boundary, whereas Logistic Regression's smooth log-odds modeling is better suited to probabilistic risk estimation.
+
+---
+
 ## Phase 6 — Model Comparison
 
 ### 1. Objective
-Systematically compare all three algorithms on the exact same holdout test set (`X_test`, `y_test`) across standard evaluation metrics, generate comparative visualizations (Confusion Matrices and ROC Curves), and select the recommended deployment model based on empirical evidence.
+Systematically compare all four algorithms on the exact same holdout test set (`X_test`, `y_test`) across standard evaluation metrics, generate comparative visualizations (Confusion Matrices and ROC Curves), and select the recommended deployment model based on empirical evidence.
 
 ### 2. Prerequisites
 - Phases 2 through 5 completed (LR, KNN, and Random Forest trained and evaluated).
@@ -569,12 +617,12 @@ A fully operational, responsive local web application ready for live viva presen
   - *Fix:* Ensure input dictionary keys exactly match the training dataset column names.
 
 ### 10. Completion Checklist
-- [ ] `app.py` implemented with clean tabs and layout
-- [ ] Model loading cached with `@st.cache_resource`
-- [ ] Model comparison table and evaluation figures rendered
-- [ ] Interactive form accepts all customer parameters
-- [ ] Output displays churn probability, binary prediction, and risk level
-- [ ] Preset demo customer profiles added for easy viva presentation
+- [x] `app.py` implemented with clean tabs and layout
+- [x] Model loading cached with `@st.cache_resource`
+- [x] Model comparison table and evaluation figures rendered (4 models)
+- [x] Interactive form accepts all customer parameters
+- [x] Output displays churn probability, binary prediction, and risk level
+- [x] Preset demo customer profiles added for easy viva presentation
 
 ### 11. Learning Objectives (Viva Preparation)
 - **How is the prediction probability converted into an action in industry?** A probability score (e.g. 78% churn probability) allows businesses to rank customers by risk and allocate intervention budgets (e.g. calling top 5% at-risk customers with customized contract discounts).
@@ -632,10 +680,10 @@ A robust, automated test suite giving complete confidence that the project is fr
   - *Fix:* Assert ranges (e.g., `assert roc_auc > 0.80`) rather than exact equality.
 
 ### 10. Completion Checklist
-- [ ] `tests/test_preprocess.py` created and passing
-- [ ] `tests/test_model.py` created and passing
-- [ ] Edge cases (tenure=0, large total charges) tested
-- [ ] `pytest -v` runs and reports 100% tests passing
+- [x] `tests/test_preprocess.py` created and passing
+- [x] `tests/test_model.py` created and passing (tests LR, KNN, RF, and SVM)
+- [x] Edge cases (tenure=0, large total charges) tested
+- [x] `pytest -v` runs and reports 100% tests passing (9/9 passed)
 
 ### 11. Learning Objectives (Viva Preparation)
 - **Why write automated tests for ML projects?** ML code fails silently: a bug in preprocessing (e.g., improper scaling or column misalignment) won't throw an error, but will silently destroy model accuracy. Unit testing catches data shape, value range, and leakage regressions before deployment.
@@ -716,7 +764,8 @@ A complete, academic-grade project package ready for submission and presentation
 | **Phase 3** | Logistic Regression | `src/train.py` (5-fold CV tuning of `C`, test metrics) | `python -c "from src.train import train_logistic_regression..."` |
 | **Phase 4** | K-Nearest Neighbors | `src/train.py` (Tuning odd $k$, scaling impact analysis) | `python -c "from src.train import train_knn..."` |
 | **Phase 5** | Random Forest | `src/train.py` (Bagging tuning, feature importances) | `python -c "from src.train import train_random_forest..."` |
-| **Phase 6** | Model Comparison | `src/evaluate.py`, `models/model_comparison.json`, plots | `python -c "from src.evaluate import compare_all_models..."` |
+| **Phase 5B** | Support Vector Machine | `src/train.py` (Linear SVC, 5-fold CV tuning of $C$) | `python -c "from src.train import train_svm..."` |
+| **Phase 6** | Model Comparison | `src/evaluate.py`, `models/metrics.json`, plots | `python -c "from src.evaluate import compare_all_models..."` |
 | **Phase 7** | Saving & Reloading Model | `models/best_model.joblib`, pipeline verification | `python -c "from src.train import test_reloaded_model..."` |
 | **Phase 8** | Streamlit Interface | `app.py` (Interactive prediction, comparison, insights) | `streamlit run app.py` |
 | **Phase 9** | Testing & Final Verification | `tests/test_preprocess.py`, `tests/test_model.py` | `pytest -v tests/` |

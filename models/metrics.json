@@ -20,8 +20,57 @@
             "recall": 0.42780748663101603,
             "f1": 0.5237315875613748,
             "roc_auc": 0.8397039448190342
+        },
+        "Support Vector Machine": {
+            "accuracy": 0.7885024840312278,
+            "precision": 0.61875,
+            "recall": 0.5294117647058824,
+            "f1": 0.5706051873198847,
+            "roc_auc": 0.8266294660156553
         }
     },
     "best_model": "Logistic Regression",
-    "selection_rationale": "In customer churn prediction, Recall is critical to minimize False Negatives (failing to identify customers who cancel). Logistic Regression captures 55.88% of churners compared to Random Forest's 42.78%, achieving a superior F1-score (0.6040 vs 0.5237) and highest ROC-AUC (0.8411 vs 0.8397). It is also transparent, computationally lightweight, and produces well-calibrated odds ratios."
+    "selection_rationale": "In customer churn prediction, Recall is critical to minimize False Negatives (failing to identify customers who cancel). Logistic Regression captures 55.88% of churners compared to Random Forest's 42.78%, SVM's 52.94%, and KNN's 56.42%. Logistic Regression achieves the superior F1-score (0.6040 vs SVM's 0.5706) and highest ROC-AUC (0.8411 vs SVM's 0.8266). It is also transparent, computationally lightweight, and produces well-calibrated odds ratios.",
+    "random_forest_features": [
+        {
+            "feature": "cat__Contract_Month-to-month",
+            "importance": 0.1661403068407721
+        },
+        {
+            "feature": "num__tenure",
+            "importance": 0.14187558403059186
+        },
+        {
+            "feature": "cat__OnlineSecurity_No",
+            "importance": 0.09056223415166151
+        },
+        {
+            "feature": "num__TotalCharges",
+            "importance": 0.07745501838016312
+        },
+        {
+            "feature": "cat__InternetService_Fiber optic",
+            "importance": 0.07422412245309884
+        },
+        {
+            "feature": "cat__Contract_Two year",
+            "importance": 0.06495678498774014
+        },
+        {
+            "feature": "cat__TechSupport_No",
+            "importance": 0.05629117581693427
+        },
+        {
+            "feature": "cat__PaymentMethod_Electronic check",
+            "importance": 0.04916545386848986
+        },
+        {
+            "feature": "num__MonthlyCharges",
+            "importance": 0.04062944524275057
+        },
+        {
+            "feature": "cat__OnlineBackup_No",
+            "importance": 0.03240345749653967
+        }
+    ]
 }

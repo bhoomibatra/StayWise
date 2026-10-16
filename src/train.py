@@ -19,6 +19,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -409,6 +410,99 @@ def train_random_forest(
     return best_pipeline, metrics, top_features
 
 
+def train_svm(
+    X_train=None,
+    X_test=None,
+    y_train=None,
+    y_test=None,
+    preprocessor=None,
+) -> tuple[Pipeline, dict]:
+    """Train and evaluate a Support Vector Machine (SVM) pipeline with 5-fold CV hyperparameter tuning.
+
+    Steps:
+    1. Bundle the unfitted preprocessor (StandardScaler + OneHotEncoder) and SVC into a Pipeline.
+    2. Use a linear kernel and tune regularization parameter C in [0.1, 1.0, 10.0] via 5-Fold Stratified CV on X_train.
+    3. Fit the optimal SVM pipeline on the full training set.
+    4. Predict classes and class probabilities (probability=True) on the holdout test set (X_test).
+    5. Compute and report holdout metrics.
+
+    Args:
+        X_train: Optional pre-loaded training features.
+        X_test: Optional pre-loaded test features.
+        y_train: Optional pre-loaded training target.
+        y_test: Optional pre-loaded test target.
+        preprocessor: Optional unfitted ColumnTransformer.
+
+    Returns:
+        Tuple of (fitted_pipeline, metrics_dict).
+    """
+    if any(arg is None for arg in (X_train, X_test, y_train, y_test, preprocessor)):
+        X_train, X_test, y_train, y_test, preprocessor = prepare_data()
+
+    base_pipeline = Pipeline(
+        steps=[
+            ("preprocessor", preprocessor),
+            (
+                "classifier",
+                SVC(
+                    kernel="linear",
+                    probability=True,
+                    random_state=42,
+                ),
+            ),
+        ]
+    )
+
+    param_grid = {
+        "classifier__C": [0.1, 1.0, 10.0],
+    }
+
+    cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    grid_search = GridSearchCV(
+        estimator=base_pipeline,
+        param_grid=param_grid,
+        scoring="roc_auc",
+        cv=cv_strategy,
+        n_jobs=-1,
+        return_train_score=False,
+    )
+
+    print("=" * 60)
+    print("STAYWISE — SUPPORT VECTOR MACHINE (SVM) TRAINING")
+    print("=" * 60)
+    print("Running 5-fold Stratified Cross-Validation on training data...")
+    grid_search.fit(X_train, y_train)
+
+    print("\n--- Cross-Validation Results by C value ---")
+    for mean_score, std_score, params in zip(
+        grid_search.cv_results_["mean_test_score"],
+        grid_search.cv_results_["std_test_score"],
+        grid_search.cv_results_["params"],
+    ):
+        c_val = params["classifier__C"]
+        print(f"  C = {c_val:<4} -> Mean CV ROC-AUC: {mean_score:.4f} (+/- {std_score:.4f})")
+
+    best_pipeline = grid_search.best_estimator_
+    best_c = grid_search.best_params_["classifier__C"]
+    print(f"\nOptimal Hyperparameter: C = {best_c}")
+
+    # Evaluate on holdout test set (X_test, y_test)
+    y_pred = best_pipeline.predict(X_test)
+    y_prob = best_pipeline.predict_proba(X_test)[:, 1]
+
+    metrics = compute_metrics(y_test, y_pred, y_prob)
+
+    print("\n--- Holdout Test Set Evaluation (1,409 rows) ---")
+    print(f"  Accuracy  : {metrics['accuracy']:.4f}  (Overall correct classifications)")
+    print(f"  Precision : {metrics['precision']:.4f}  (When predicting Churn, how often right)")
+    print(f"  Recall    : {metrics['recall']:.4f}  (Out of actual churners, how many caught)")
+    print(f"  F1-Score  : {metrics['f1']:.4f}  (Harmonic balance of precision & recall)")
+    print(f"  ROC-AUC   : {metrics['roc_auc']:.4f}  (Ranking separation across all thresholds)")
+    print("=" * 60)
+
+    return best_pipeline, metrics
+
+
 def save_model(pipeline: Pipeline, filepath: Path | str = BEST_MODEL_PATH) -> Path:
     """Save a fitted Scikit-Learn pipeline to disk using joblib.
 
@@ -600,6 +694,7 @@ if __name__ == "__main__":
     train_knn()
     compare_knn_scaling()
     train_random_forest()
+    train_svm()
     save_best_model()
     test_reloaded_model()
 

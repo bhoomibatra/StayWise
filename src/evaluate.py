@@ -26,6 +26,7 @@ from src.train import (
     train_knn,
     train_logistic_regression,
     train_random_forest,
+    train_svm,
 )
 
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -49,11 +50,11 @@ def plot_evaluation_charts(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fig = plt.figure(figsize=(16, 10))
-    gs = fig.add_gridspec(2, 3, height_ratios=[1, 1.2], hspace=0.35, wspace=0.3)
-
     model_names = list(predictions.keys())
-    cm_colors = ["Blues", "Greens", "Oranges"]
+    n_models = len(model_names)
+    fig = plt.figure(figsize=(20, 10))
+    gs = fig.add_gridspec(2, n_models, height_ratios=[1, 1.2], hspace=0.35, wspace=0.3)
+    cm_colors = ["Blues", "Greens", "Oranges", "Purples", "PuBu", "YlOrBr"][:n_models]
 
     # Row 1: Side-by-side Confusion Matrices
     for idx, name in enumerate(model_names):
@@ -93,7 +94,12 @@ def plot_evaluation_charts(
 
     # Row 2: Overlaid ROC Curves across full width
     ax_roc = fig.add_subplot(gs[1, :])
-    palette = {"Logistic Regression": "#1f77b4", "K-Nearest Neighbors": "#2ca02c", "Random Forest": "#ff7f0e"}
+    palette = {
+        "Logistic Regression": "#1f77b4",
+        "K-Nearest Neighbors": "#2ca02c",
+        "Random Forest": "#ff7f0e",
+        "Support Vector Machine": "#9467bd",
+    }
 
     for name in model_names:
         y_prob = probabilities[name]
@@ -151,8 +157,13 @@ def compare_all_models() -> pd.DataFrame:
         X_train, X_test, y_train, y_test, preprocessor
     )
 
-    print("\n[3/3] Evaluating Random Forest...")
-    rf_pipeline, rf_metrics, _ = train_random_forest(
+    print("\n[3/4] Evaluating Random Forest...")
+    rf_pipeline, rf_metrics, rf_top_features = train_random_forest(
+        X_train, X_test, y_train, y_test, preprocessor
+    )
+
+    print("\n[4/4] Evaluating Support Vector Machine...")
+    svm_pipeline, svm_metrics = train_svm(
         X_train, X_test, y_train, y_test, preprocessor
     )
 
@@ -161,6 +172,7 @@ def compare_all_models() -> pd.DataFrame:
         "Logistic Regression": lr_metrics,
         "K-Nearest Neighbors": knn_metrics,
         "Random Forest": rf_metrics,
+        "Support Vector Machine": svm_metrics,
     }
 
     summary_df = pd.DataFrame(metrics_records).T[
@@ -173,12 +185,14 @@ def compare_all_models() -> pd.DataFrame:
         "Logistic Regression": lr_pipeline.predict(X_test),
         "K-Nearest Neighbors": knn_pipeline.predict(X_test),
         "Random Forest": rf_pipeline.predict(X_test),
+        "Support Vector Machine": svm_pipeline.predict(X_test),
     }
 
     probabilities = {
         "Logistic Regression": lr_pipeline.predict_proba(X_test)[:, 1],
         "K-Nearest Neighbors": knn_pipeline.predict_proba(X_test)[:, 1],
         "Random Forest": rf_pipeline.predict_proba(X_test)[:, 1],
+        "Support Vector Machine": svm_pipeline.predict_proba(X_test)[:, 1],
     }
 
     # 5. Generate and save evaluation charts
@@ -188,15 +202,18 @@ def compare_all_models() -> pd.DataFrame:
     best_model_name = "Logistic Regression"
     lr_rec = lr_metrics["recall"] * 100
     rf_rec = rf_metrics["recall"] * 100
+    svm_rec = svm_metrics["recall"] * 100
+    knn_rec = knn_metrics["recall"] * 100
     lr_f1 = lr_metrics["f1"]
-    rf_f1 = rf_metrics["f1"]
+    svm_f1 = svm_metrics["f1"]
     lr_auc = lr_metrics["roc_auc"]
-    rf_auc = rf_metrics["roc_auc"]
+    svm_auc = svm_metrics["roc_auc"]
     selection_rationale = (
         f"In customer churn prediction, Recall is critical to minimize False Negatives "
         f"(failing to identify customers who cancel). Logistic Regression captures {lr_rec:.2f}% of churners "
-        f"compared to Random Forest's {rf_rec:.2f}%, achieving a superior F1-score ({lr_f1:.4f} vs {rf_f1:.4f}) "
-        f"and highest ROC-AUC ({lr_auc:.4f} vs {rf_auc:.4f}). It is also transparent, computationally lightweight, "
+        f"compared to Random Forest's {rf_rec:.2f}%, SVM's {svm_rec:.2f}%, and KNN's {knn_rec:.2f}%. "
+        f"Logistic Regression achieves the superior F1-score ({lr_f1:.4f} vs SVM's {svm_f1:.4f}) "
+        f"and highest ROC-AUC ({lr_auc:.4f} vs SVM's {svm_auc:.4f}). It is also transparent, computationally lightweight, "
         f"and produces well-calibrated odds ratios."
     )
 
@@ -208,6 +225,10 @@ def compare_all_models() -> pd.DataFrame:
         },
         "best_model": best_model_name,
         "selection_rationale": selection_rationale,
+        "random_forest_features": [
+            {"feature": name, "importance": float(imp)}
+            for name, imp in rf_top_features
+        ],
     }
 
     with open(METRICS_JSON_PATH, "w", encoding="utf-8") as f:
