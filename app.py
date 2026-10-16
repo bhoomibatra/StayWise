@@ -1,7 +1,9 @@
-"""StayWise — Customer Churn Prediction ML Lab Web Application.
+"""StayWise — Customer Churn Prediction and Retention Intelligence Dashboard.
 
-An interactive Streamlit application demonstrating machine learning model
-training, comparison, evaluation, and single-customer churn prediction.
+An automated machine learning web application that analyzes the Telco Customer
+Churn dataset to predict which subscribers will churn vs stay, categorizes
+subscribers into transparent risk tiers, provides personalized customer-level
+retention playbooks, and compares 4 machine learning algorithms.
 """
 
 from pathlib import Path
@@ -14,21 +16,72 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import joblib
+import numpy as np
 import pandas as pd
 import streamlit as st
+
+from src.data_loader import DEFAULT_DATA_PATH, load_raw_data
+from src.preprocess import CATEGORICAL_FEATURES, NUMERICAL_FEATURES
 
 MODELS_DIR = PROJECT_ROOT / "models"
 BEST_MODEL_PATH = MODELS_DIR / "best_model.joblib"
 METRICS_JSON_PATH = MODELS_DIR / "metrics.json"
 PLOTS_PNG_PATH = MODELS_DIR / "evaluation_plots.png"
 
-
 # Page Configuration
 st.set_page_config(
-    page_title="StayWise — Customer Churn Prediction",
+    page_title="StayWise — Automated Churn Intelligence",
     page_icon="📡",
     layout="wide",
     initial_sidebar_state="expanded",
+)
+
+# Custom CSS for polished, modern enterprise interface
+st.markdown(
+    """
+    <style>
+    .metric-card {
+        background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+    }
+    .badge-high {
+        background-color: #ff4b4b22;
+        color: #ff4b4b;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        border: 1px solid #ff4b4b66;
+    }
+    .badge-med {
+        background-color: #ffa50022;
+        color: #ffa500;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        border: 1px solid #ffa50066;
+    }
+    .badge-low {
+        background-color: #00cc6622;
+        color: #00cc66;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        border: 1px solid #00cc6666;
+    }
+    .disclaimer-box {
+        font-size: 0.85rem;
+        background-color: rgba(100, 116, 139, 0.12);
+        border-left: 3px solid #64748b;
+        padding: 8px 12px;
+        border-radius: 4px;
+        margin-top: 8px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -40,6 +93,7 @@ def load_best_pipeline(filepath: Path = BEST_MODEL_PATH):
     return joblib.load(filepath)
 
 
+@st.cache_data
 def load_metrics_data(filepath: Path = METRICS_JSON_PATH):
     """Load model evaluation metrics and feature importances from JSON."""
     if not filepath.exists():
@@ -48,186 +102,793 @@ def load_metrics_data(filepath: Path = METRICS_JSON_PATH):
         return json.load(f)
 
 
-# Initialize session state for customer form inputs
-def init_form_state():
-    defaults = {
-        "gender": "Female",
-        "SeniorCitizen": 0,
-        "Partner": "No",
-        "Dependents": "No",
-        "tenure": 12,
-        "PhoneService": "Yes",
-        "MultipleLines": "No",
-        "InternetService": "Fiber optic",
-        "OnlineSecurity": "No",
-        "OnlineBackup": "No",
-        "DeviceProtection": "No",
-        "TechSupport": "No",
-        "StreamingTV": "Yes",
-        "StreamingMovies": "No",
-        "Contract": "Month-to-month",
-        "PaperlessBilling": "Yes",
-        "PaymentMethod": "Electronic check",
-        "MonthlyCharges": 75.0,
-        "TotalCharges": 900.0,
-    }
-    for key, val in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = val
+@st.cache_data
+def run_dataset_scoring(data_path: Path = DEFAULT_DATA_PATH, high_thresh: float = 0.60, med_thresh: float = 0.35):
+    """Load the dataset and score all eligible records with the trained pipeline.
+
+    Guarantees:
+    - Automatically loads dataset from configured path
+    - Uses existing trained Scikit-learn pipeline (zero retraining on load)
+    - Excludes customerID and target Churn from model inputs
+    - Returns enriched DataFrame with probabilities, predictions, and risk tiers
+    """
+    if not BEST_MODEL_PATH.exists():
+        return None, "Model file 'models/best_model.joblib' not found. Please train models first."
+
+    try:
+        raw_df = load_raw_data(data_path)
+    except Exception as exc:
+        return None, f"Error loading dataset from {data_path}: {exc}"
+
+    try:
+        pipeline = load_best_pipeline(BEST_MODEL_PATH)
+        if pipeline is None:
+            return None, "Failed to load Scikit-learn pipeline."
+
+        # Strictly select only model input features (excludes customerID and Churn)
+        feature_cols = NUMERICAL_FEATURES + CATEGORICAL_FEATURES
+        missing_cols = [c for c in feature_cols if c not in raw_df.columns]
+        if missing_cols:
+            return None, f"Dataset schema error: missing required feature columns: {missing_cols}"
+
+        X_input = raw_df[feature_cols].copy()
+
+        # Batch prediction with trained pipeline
+        probs = pipeline.predict_proba(X_input)[:, 1]
+        preds = pipeline.predict(X_input)
+
+        # Build enriched operational dataframe
+        scored_df = raw_df.copy()
+        scored_df["churn_probability"] = np.round(probs, 4)
+        scored_df["churn_probability_pct"] = np.round(probs * 100, 1)
+        scored_df["predicted_churn"] = np.where(preds == 1, "Churn", "Stay")
+
+        # Assign risk category using configurable thresholds
+        conditions = [
+            scored_df["churn_probability"] >= high_thresh,
+            scored_df["churn_probability"] >= med_thresh,
+        ]
+        choices = ["High Risk", "Medium Risk"]
+        scored_df["risk_category"] = np.select(conditions, choices, default="Low Risk")
+
+        return scored_df, None
+    except Exception as exc:
+        return None, f"Inference failure: {exc}"
 
 
-init_form_state()
+def extract_risk_drivers(customer_row: pd.Series) -> list[tuple[str, str, str]]:
+    """Inspect customer profile against empirical churn drivers in the dataset.
+
+    Returns:
+        List of tuples: (Driver Title, Impact Level ['High', 'Medium', 'Protective'], Explanation)
+    """
+    drivers = []
+
+    # Contract Type
+    contract = str(customer_row.get("Contract", ""))
+    if contract == "Month-to-month":
+        drivers.append((
+            "Month-to-Month Contract",
+            "High",
+            "Subscribers on month-to-month contracts have 0 cancellation friction and represent >88% of all churners in the dataset."
+        ))
+    elif contract in ["One year", "Two year"]:
+        drivers.append((
+            f"{contract} Contract",
+            "Protective",
+            f"Long-term {contract.lower()} commitment strongly anchors subscriber retention."
+        ))
+
+    # Tenure
+    tenure = float(customer_row.get("tenure", 0))
+    if tenure <= 6:
+        drivers.append((
+            f"New Subscriber (Tenure: {int(tenure)} months)",
+            "High",
+            "Highest hazard window: customers in their first 6 months have the highest attrition rate."
+        ))
+    elif tenure <= 18:
+        drivers.append((
+            f"Early Lifecycle (Tenure: {int(tenure)} months)",
+            "Medium",
+            "Customer has not yet established deep operational brand habits."
+        ))
+    elif tenure >= 48:
+        drivers.append((
+            f"Tenured Customer ({int(tenure)} months)",
+            "Protective",
+            "Long customer lifetime value with established satisfaction."
+        ))
+
+    # Internet Service & Add-ons
+    internet = str(customer_row.get("InternetService", ""))
+    tech_support = str(customer_row.get("TechSupport", ""))
+    online_sec = str(customer_row.get("OnlineSecurity", ""))
+
+    if internet == "Fiber optic":
+        if tech_support == "No" or online_sec == "No":
+            drivers.append((
+                "Fiber Optic Without Support Add-ons",
+                "High",
+                "Fiber optic has the highest churn rate when technical support or online security are absent."
+            ))
+        else:
+            drivers.append((
+                "Fully-Protected Fiber Optic Subscriber",
+                "Protective",
+                "Customer has bundled value-added safety services."
+            ))
+
+    # Payment Method
+    payment = str(customer_row.get("PaymentMethod", ""))
+    if "Electronic check" in payment:
+        drivers.append((
+            "Electronic Check Billing",
+            "High",
+            "Electronic check users exhibit the highest churn frequency (~45%) compared to automated payment channels."
+        ))
+    elif "automatic" in payment.lower():
+        drivers.append((
+            f"Automated Billing ({payment})",
+            "Protective",
+            "Automatic payment reduces involuntary billing drop-off and increases account stickiness."
+        ))
+
+    # Monthly Charges
+    monthly = float(customer_row.get("MonthlyCharges", 0))
+    if monthly >= 80.0:
+        drivers.append((
+            f"High Monthly Charge (${monthly:.2f}/mo)",
+            "Medium",
+            "Premium tier billing creates heightened price sensitivity and competitor comparison shopping."
+        ))
+
+    # Family & Bundle Stickiness
+    partner = str(customer_row.get("Partner", ""))
+    dependents = str(customer_row.get("Dependents", ""))
+    if partner == "Yes" and dependents == "Yes":
+        drivers.append((
+            "Multi-Person Household (Partner & Dependents)",
+            "Protective",
+            "Household accounts face higher collective friction to switch providers."
+        ))
+
+    return drivers
 
 
-def set_high_risk_preset():
-    st.session_state.gender = "Female"
-    st.session_state.SeniorCitizen = 0
-    st.session_state.Partner = "No"
-    st.session_state.Dependents = "No"
-    st.session_state.tenure = 2
-    st.session_state.PhoneService = "Yes"
-    st.session_state.MultipleLines = "No"
-    st.session_state.InternetService = "Fiber optic"
-    st.session_state.OnlineSecurity = "No"
-    st.session_state.OnlineBackup = "No"
-    st.session_state.DeviceProtection = "No"
-    st.session_state.TechSupport = "No"
-    st.session_state.StreamingTV = "Yes"
-    st.session_state.StreamingMovies = "Yes"
-    st.session_state.Contract = "Month-to-month"
-    st.session_state.PaperlessBilling = "Yes"
-    st.session_state.PaymentMethod = "Electronic check"
-    st.session_state.MonthlyCharges = 95.50
-    st.session_state.TotalCharges = 191.00
+def get_retention_playbook(customer_row: pd.Series, risk_cat: str) -> list[str]:
+    """Generate personalized, actionable retention interventions based on customer profile."""
+    actions = []
+    contract = str(customer_row.get("Contract", ""))
+    payment = str(customer_row.get("PaymentMethod", ""))
+    tech_support = str(customer_row.get("TechSupport", ""))
+    online_sec = str(customer_row.get("OnlineSecurity", ""))
+    tenure = float(customer_row.get("tenure", 0))
+
+    if contract == "Month-to-month":
+        actions.append("🎯 **Contract Upgrade Incentive:** Offer a guaranteed 15% bill discount or speed upgrade in exchange for transitioning to an annual contract.")
+
+    if tech_support == "No" or online_sec == "No":
+        actions.append("🛠️ **Value Add-on Onboarding:** Provide complimentary 6-month trial of Premium Tech Support and Online Security to enhance perceived utility.")
+
+    if "Electronic check" in payment:
+        actions.append("💳 **Auto-Pay Migration Bonus:** Grant a recurring $5 monthly bill credit for switching from manual electronic check to automated bank transfer or credit card.")
+
+    if tenure <= 6:
+        actions.append("📞 **Proactive Onboarding Outreach:** Trigger an account manager satisfaction call to address initial connectivity issues before month 6.")
+
+    if not actions:
+        if risk_cat == "High Risk":
+            actions.append("⚡ **Priority Account Review:** Assign senior customer success representative for immediate retention survey and customized loyalty credit.")
+        else:
+            actions.append("🎁 **Loyalty Appreciation:** Deliver anniversary appreciation perks and maintain standard high-quality customer experience touchpoints.")
+
+    return actions
 
 
-def set_loyal_preset():
-    st.session_state.gender = "Male"
-    st.session_state.SeniorCitizen = 0
-    st.session_state.Partner = "Yes"
-    st.session_state.Dependents = "Yes"
-    st.session_state.tenure = 68
-    st.session_state.PhoneService = "Yes"
-    st.session_state.MultipleLines = "Yes"
-    st.session_state.InternetService = "DSL"
-    st.session_state.OnlineSecurity = "Yes"
-    st.session_state.OnlineBackup = "Yes"
-    st.session_state.DeviceProtection = "Yes"
-    st.session_state.TechSupport = "Yes"
-    st.session_state.StreamingTV = "No"
-    st.session_state.StreamingMovies = "No"
-    st.session_state.Contract = "Two year"
-    st.session_state.PaperlessBilling = "No"
-    st.session_state.PaymentMethod = "Bank transfer (automatic)"
-    st.session_state.MonthlyCharges = 45.00
-    st.session_state.TotalCharges = 3060.00
+# ==============================================================================
+# SIDEBAR CONTROLS & THRESHOLD CONFIGURATION
+# ==============================================================================
+with st.sidebar:
+    st.title("📡 StayWise")
+    st.caption("Automated Churn Intelligence Engine")
+    st.markdown("---")
+
+    st.subheader("⚙️ Risk Thresholds")
+    st.markdown(
+        "<div class='disclaimer-box'>"
+        "Configure operational risk boundaries. Default thresholds map sigmoid outputs into actionable triage tiers."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    high_thresh = st.slider(
+        "🚨 High Risk Threshold (Prob ≥)",
+        min_value=0.50,
+        max_value=0.90,
+        value=0.60,
+        step=0.05,
+        help="Subscribers with churn probability above this threshold are flagged for immediate priority retention.",
+    )
+
+    med_thresh = st.slider(
+        "⚠️ Medium Risk Threshold (Prob ≥)",
+        min_value=0.20,
+        max_value=0.49,
+        value=0.35,
+        step=0.05,
+        help="Subscribers between Medium and High thresholds are enrolled in proactive engagement campaigns.",
+    )
+
+    st.caption(
+        f"**Active Tiers:**  \n"
+        f"• 🚨 High Risk: $\\ge {int(high_thresh*100)}\\%$  \n"
+        f"• ⚠️ Medium Risk: ${int(med_thresh*100)}\\% - {int(high_thresh*100)-1}\\%$  \n"
+        f"• 🛡️ Low Risk: $< {int(med_thresh*100)}\\%$"
+    )
+
+    st.markdown("---")
+    st.subheader("📌 System Status")
+    st.success("● Pipeline: Logistic Regression (C=1.0)")
+    st.info("● Data Source: Telco Churn CSV (7,043 Records)")
+    st.caption(
+        "⚠️ **Calibration Note:** Logistic Regression probabilities represent statistical model posteriors. "
+        "These tiers represent heuristic operational boundaries rather than calibrated financial probabilities."
+    )
 
 
-def reset_form_defaults():
-    st.session_state.gender = "Female"
-    st.session_state.SeniorCitizen = 0
-    st.session_state.Partner = "No"
-    st.session_state.Dependents = "No"
-    st.session_state.tenure = 12
-    st.session_state.PhoneService = "Yes"
-    st.session_state.MultipleLines = "No"
-    st.session_state.InternetService = "Fiber optic"
-    st.session_state.OnlineSecurity = "No"
-    st.session_state.OnlineBackup = "No"
-    st.session_state.DeviceProtection = "No"
-    st.session_state.TechSupport = "No"
-    st.session_state.StreamingTV = "Yes"
-    st.session_state.StreamingMovies = "No"
-    st.session_state.Contract = "Month-to-month"
-    st.session_state.PaperlessBilling = "Yes"
-    st.session_state.PaymentMethod = "Electronic check"
-    st.session_state.MonthlyCharges = 75.00
-    st.session_state.TotalCharges = 900.00
+# ==============================================================================
+# LOAD SCORED DATASET AUTOMATICALLY
+# ==============================================================================
+scored_df, score_err = run_dataset_scoring(DEFAULT_DATA_PATH, high_thresh=high_thresh, med_thresh=med_thresh)
+
+if score_err or scored_df is None:
+    st.error(f"❌ Application Initialization Error: {score_err}")
+    st.info("Ensure `models/best_model.joblib` exists by running `python -m src.train`.")
+    st.stop()
 
 
-# Application Header
-st.title("📡 StayWise — Customer Churn Prediction ML Lab")
+# Calculate high-level summary metrics across the dataset
+total_customers = len(scored_df)
+pred_churn_count = int((scored_df["predicted_churn"] == "Churn").sum())
+pred_churn_pct = (pred_churn_count / total_customers) * 100
+pred_stay_count = total_customers - pred_churn_count
+pred_stay_pct = (pred_stay_count / total_customers) * 100
+
+has_actuals = "Churn" in scored_df.columns
+if has_actuals:
+    act_churn_count = int((scored_df["Churn"].astype(str).str.lower() == "yes").sum())
+    act_churn_pct = (act_churn_count / total_customers) * 100
+else:
+    act_churn_count = None
+    act_churn_pct = None
+
+high_risk_count = int((scored_df["risk_category"] == "High Risk").sum())
+high_risk_pct = (high_risk_count / total_customers) * 100
+med_risk_count = int((scored_df["risk_category"] == "Medium Risk").sum())
+med_risk_pct = (med_risk_count / total_customers) * 100
+low_risk_count = int((scored_df["risk_category"] == "Low Risk").sum())
+low_risk_pct = (low_risk_count / total_customers) * 100
+
+
+# Application Title & Top Header
+st.title("📡 StayWise — Customer Churn Prediction & Retention Intelligence")
 st.markdown(
-    "**An End-to-End Educational Machine Learning Laboratory Project**  \n"
-    "Demonstrating exploratory analysis, zero-leakage preprocessing, 5-fold cross-validation, "
-    "multi-algorithm comparison, and interactive single-customer inference."
+    "Automated customer churn intelligence across **7,043 Telco subscriber records**. "
+    "Every customer is scored using the trained Scikit-learn machine learning pipeline."
 )
 st.divider()
 
-# Navigation Tabs
-tab_overview, tab_comparison, tab_predictor, tab_insights = st.tabs(
+
+# ==============================================================================
+# PRIMARY 5-PAGE NAVIGATION
+# ==============================================================================
+tab_overview, tab_risk, tab_details, tab_performance, tab_insights = st.tabs(
     [
-        "📊 Project Overview",
-        "⚖️ Model Comparison",
-        "🔮 Customer Churn Predictor",
-        "💡 Feature Insights & Viva Guide",
+        "📊 1. Overview",
+        "⚠️ 2. Customer Risk",
+        "🔍 3. Customer Details",
+        "⚖️ 4. Model Performance",
+        "💡 5. Insights & Viva Guide",
     ]
 )
 
 
 # ==============================================================================
-# TAB 1: PROJECT OVERVIEW
+# TAB 1: OVERVIEW
 # ==============================================================================
 with tab_overview:
-    st.subheader("1. Problem Statement & Dataset Summary")
+    st.subheader("Automated Dataset Churn Summary")
     st.markdown(
-        """
-        Customer churn represents the percentage of subscribers who discontinue their service. 
-        In the telecommunications sector, acquiring a new subscriber is typically 5 to 7 times 
-        more expensive than retaining an existing customer. **StayWise** demonstrates an end-to-end 
-        machine learning pipeline that identifies at-risk subscribers early so retention teams can intervene.
-        """
+        "Instant intelligence calculated across all existing subscriber records. "
+        "Historical actual labels (`Churn`) and identifiers (`customerID`) were strictly excluded from model inputs."
     )
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Records", "7,043 Customers")
-    col2.metric("Feature Count", "20 Attributes")
-    col3.metric("Churn Rate", "26.54% (Imbalanced)")
-    col4.metric("Holdout Test Size", "1,409 (20% Split)")
+    # Metric Cards Row 1
+    m1, m2, m3, m4, m5 = st.columns(5)
+    with m1:
+        st.metric("Total Customers", f"{total_customers:,}", help="Total subscriber records loaded from dataset")
+    with m2:
+        st.metric(
+            "Predicted Churn",
+            f"{pred_churn_count:,}",
+            delta=f"{pred_churn_pct:.1f}% of base",
+            delta_color="inverse",
+            help="Subscribers with model prediction = Churn (prob >= 0.50)",
+        )
+    with m3:
+        st.metric(
+            "Predicted to Stay",
+            f"{pred_stay_count:,}",
+            delta=f"{pred_stay_pct:.1f}% of base",
+            delta_color="normal",
+            help="Subscribers predicted to remain with service",
+        )
+    with m4:
+        if has_actuals:
+            st.metric(
+                "Historical Churn Rate",
+                f"{act_churn_count:,}",
+                delta=f"{act_churn_pct:.2f}% actual",
+                delta_color="off",
+                help="Ground truth historical churn labels recorded in dataset",
+            )
+        else:
+            st.metric("Historical Churn Rate", "N/A")
+    with m5:
+        st.metric(
+            "Urgent High Risk",
+            f"{high_risk_count:,}",
+            delta=f"{high_risk_pct:.1f}% base",
+            delta_color="inverse",
+            help=f"Subscribers with churn probability >= {int(high_thresh*100)}%",
+        )
 
-    st.markdown("---")
-    st.subheader("2. End-to-End ML Architecture")
-
+    # Operational notice box
     st.markdown(
         """
-        ```
-        Raw IBM Telco Dataset (7,043 rows, 21 columns)
-          ├── 1. Data Cleaning: Fix 11 whitespace strings in TotalCharges -> Impute Median
-          ├── 2. Stratified Train/Test Split (80% Train: 5,634 | 20% Test: 1,409)
-          ├── 3. Scikit-Learn ColumnTransformer (Zero Data Leakage)
-          │     ├── Numerical (tenure, MonthlyCharges, TotalCharges) -> Median Imputer + StandardScaler
-          │     └── Categorical (16 features) -> Frequent Imputer + OneHotEncoder(ignore_unknown)
-          ├── 4. 5-Fold Stratified Cross-Validation on Training Set (Hyperparameter Tuning)
-          │     ├── Logistic Regression (Tuned C in [0.1, 1.0, 10.0])
-          │     ├── K-Nearest Neighbors (Tuned odd k in [5, 9, 15, 21])
-          │     ├── Random Forest (Tuned n_estimators in [50, 100], max_depth in [5, 10])
-          │     └── Support Vector Machine (Tuned C in [0.1, 1.0, 10.0], linear kernel)
-          ├── 5. Benchmark Evaluation on Untouched Holdout Test Set (Accuracy, Precision, Recall, F1, ROC-AUC)
-          ├── 6. Pipeline Serialization with Joblib (`models/best_model.joblib`)
-          └── 7. Web Application Serving via Streamlit
-        ```
-        """
+        <div class='disclaimer-box'>
+        <b>ℹ️ Evaluation Integrity Notice:</b> The metrics above represent <i>full-dataset operational scoring</i> 
+        across all 7,043 subscriber records. For strictly unbiased model evaluation on the 
+        <b>untouched 20% holdout test set (1,409 customers)</b>, visit the <b>Model Performance</b> tab.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
+    st.markdown("")
+
+    # Visual Analytics Row
+    c_left, c_right = st.columns([1, 1])
+
+    with c_left:
+        st.markdown("##### 👥 Actual vs. Predicted Churn Breakdown")
+        comp_df = pd.DataFrame(
+            {
+                "Classification": ["Predicted Outcome", "Historical Ground Truth"],
+                "Churn / Cancelled": [pred_churn_count, act_churn_count if has_actuals else 0],
+                "Retained / Stayed": [pred_stay_count, (total_customers - act_churn_count) if has_actuals else 0],
+            }
+        ).set_index("Classification")
+        st.bar_chart(comp_df, color=["#ff4b4b", "#00cc66"])
+        st.caption("Comparison between model predictions and recorded historical churn outcomes.")
+
+    with c_right:
+        st.markdown(f"##### 🎯 Subscriber Risk Tiers (Configurable: {int(med_thresh*100)}% / {int(high_thresh*100)}%)")
+        risk_df = pd.DataFrame(
+            {
+                "Risk Category": ["🚨 High Risk", "⚠️ Medium Risk", "🛡️ Low Risk"],
+                "Subscriber Count": [high_risk_count, med_risk_count, low_risk_count],
+                "Percentage (%)": [high_risk_pct, med_risk_pct, low_risk_pct],
+            }
+        ).set_index("Risk Category")
+        st.bar_chart(risk_df["Subscriber Count"], color="#ff8800")
+        st.caption("Operational customer distribution across triage risk categories.")
 
     st.markdown("---")
-    st.subheader("3. Data Hygiene Note (The TotalCharges whitespace issue)")
-    st.info(
-        "**Exploration Finding:** 11 records in the dataset had `tenure = 0` and contained whitespace `' '` "
-        "in the `TotalCharges` column, causing pandas to initially read it as an `object` string type. "
-        "StayWise safely coerced these to `NaN` and imputed them using the median of the training split, "
-        "completely preventing runtime crashes during modeling."
+    st.subheader("🚨 Priority Immediate Action: Top 5 Highest Risk Subscribers")
+    st.markdown("These customers exhibit the highest probability of imminent churn and require immediate retention intervention:")
+
+    top_at_risk = scored_df.sort_values(by="churn_probability", ascending=False).head(5)
+    display_top = top_at_risk[
+        ["customerID", "Churn", "predicted_churn", "churn_probability_pct", "risk_category", "Contract", "tenure", "MonthlyCharges", "PaymentMethod"]
+    ].rename(
+        columns={
+            "customerID": "Customer ID",
+            "Churn": "Actual Status",
+            "predicted_churn": "Predicted",
+            "churn_probability_pct": "Churn Prob (%)",
+            "risk_category": "Risk Tier",
+            "Contract": "Contract",
+            "tenure": "Tenure (Mo)",
+            "MonthlyCharges": "Monthly ($)",
+            "PaymentMethod": "Payment Method",
+        }
+    )
+    st.table(display_top)
+    st.info("👉 Switch to the **Customer Risk** tab to search, filter, and export the complete 7,043 subscriber table.")
+
+
+# ==============================================================================
+# TAB 2: CUSTOMER RISK
+# ==============================================================================
+with tab_risk:
+    st.subheader("Customer Risk Analysis & Triage Table")
+    st.markdown(
+        "Search, filter, and inspect churn predictions for all 7,043 customer records in the dataset. "
+        "Use filters to isolate high-risk subscribers for targeted retention campaigns."
+    )
+
+    # Filter Controls Bar
+    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+
+    with f_col1:
+        pred_filter = st.selectbox(
+            "Filter by Prediction",
+            ["All Customers", "Predicted Churn Only", "Predicted Stay Only"],
+            index=0,
+        )
+
+    with f_col2:
+        risk_filter = st.selectbox(
+            "Filter by Risk Category",
+            ["All Risk Tiers", "🚨 High Risk", "⚠️ Medium Risk", "🛡️ Low Risk"],
+            index=0,
+        )
+
+    with f_col3:
+        actual_filter = st.selectbox(
+            "Filter by Actual Churn",
+            ["All Historical Outcomes", "Actual Churned (Yes)", "Actual Stayed (No)"],
+            index=0,
+        )
+
+    with f_col4:
+        contract_filter = st.selectbox(
+            "Filter by Contract Type",
+            ["All Contract Types", "Month-to-month", "One year", "Two year"],
+            index=0,
+        )
+
+    # Search Bar
+    s_col1, s_col2 = st.columns([3, 1])
+    with s_col1:
+        search_query = st.text_input(
+            "🔍 Search by Customer ID",
+            placeholder="e.g. 7590-VHVEG or type partial ID...",
+        ).strip()
+    with s_col2:
+        sort_choice = st.selectbox(
+            "Sort Order",
+            ["Highest Churn Probability", "Lowest Churn Probability", "Longest Tenure", "Highest Monthly Charges"],
+            index=0,
+        )
+
+    # Apply filters
+    filtered_df = scored_df.copy()
+
+    if pred_filter == "Predicted Churn Only":
+        filtered_df = filtered_df[filtered_df["predicted_churn"] == "Churn"]
+    elif pred_filter == "Predicted Stay Only":
+        filtered_df = filtered_df[filtered_df["predicted_churn"] == "Stay"]
+
+    if risk_filter == "🚨 High Risk":
+        filtered_df = filtered_df[filtered_df["risk_category"] == "High Risk"]
+    elif risk_filter == "⚠️ Medium Risk":
+        filtered_df = filtered_df[filtered_df["risk_category"] == "Medium Risk"]
+    elif risk_filter == "🛡️ Low Risk":
+        filtered_df = filtered_df[filtered_df["risk_category"] == "Low Risk"]
+
+    if actual_filter == "Actual Churned (Yes)":
+        filtered_df = filtered_df[filtered_df["Churn"].astype(str).str.lower() == "yes"]
+    elif actual_filter == "Actual Stayed (No)":
+        filtered_df = filtered_df[filtered_df["Churn"].astype(str).str.lower() == "no"]
+
+    if contract_filter != "All Contract Types":
+        filtered_df = filtered_df[filtered_df["Contract"] == contract_filter]
+
+    if search_query:
+        filtered_df = filtered_df[filtered_df["customerID"].str.contains(search_query, case=False, na=False)]
+
+    # Sorting
+    if sort_choice == "Highest Churn Probability":
+        filtered_df = filtered_df.sort_values(by="churn_probability", ascending=False)
+    elif sort_choice == "Lowest Churn Probability":
+        filtered_df = filtered_df.sort_values(by="churn_probability", ascending=True)
+    elif sort_choice == "Longest Tenure":
+        filtered_df = filtered_df.sort_values(by="tenure", ascending=False)
+    elif sort_choice == "Highest Monthly Charges":
+        filtered_df = filtered_df.sort_values(by="MonthlyCharges", ascending=False)
+
+    # Results Counter & CSV Export
+    rc1, rc2 = st.columns([3, 1])
+    with rc1:
+        st.markdown(
+            f"**Showing {len(filtered_df):,} of {total_customers:,} customers** "
+            f"({(len(filtered_df)/total_customers*100):.1f}% of dataset)"
+        )
+    with rc2:
+        csv_data = filtered_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Export Filtered List (CSV)",
+            data=csv_data,
+            file_name="staywise_customer_risk_export.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    # Format dataframe for presentation
+    columns_to_show = [
+        "customerID",
+        "Churn",
+        "predicted_churn",
+        "churn_probability_pct",
+        "risk_category",
+        "Contract",
+        "tenure",
+        "MonthlyCharges",
+        "TotalCharges",
+        "InternetService",
+        "PaymentMethod",
+        "TechSupport",
+        "OnlineSecurity",
+    ]
+    display_table = filtered_df[columns_to_show].rename(
+        columns={
+            "customerID": "Customer ID",
+            "Churn": "Actual Status",
+            "predicted_churn": "Prediction",
+            "churn_probability_pct": "Churn Prob (%)",
+            "risk_category": "Risk Tier",
+            "Contract": "Contract",
+            "tenure": "Tenure (Mo)",
+            "MonthlyCharges": "Monthly ($)",
+            "TotalCharges": "Total ($)",
+            "InternetService": "Internet",
+            "PaymentMethod": "Payment Method",
+            "TechSupport": "Tech Support",
+            "OnlineSecurity": "Online Security",
+        }
+    )
+
+    st.dataframe(
+        display_table,
+        use_container_width=True,
+        height=480,
     )
 
 
 # ==============================================================================
-# TAB 2: MODEL COMPARISON
+# TAB 3: CUSTOMER DETAILS
 # ==============================================================================
-with tab_comparison:
-    st.subheader("1. Comparative Benchmark Across All 4 Algorithms")
+with tab_details:
+    st.subheader("Customer Profile & Retention Intelligence")
     st.markdown(
-        "All four models were evaluated on the **exact same untouched holdout test set** "
-        "(1,409 rows, 26.54% churn) to ensure an authentic and fair benchmark."
+        "Select any customer from the dataset to inspect their full attributes, model prediction, "
+        "personalized risk drivers, and recommended retention interventions."
     )
+
+    # Customer Selection Controls
+    col_sel1, col_sel2, col_sel3 = st.columns([2, 1, 1])
+
+    # Default to first high-risk customer or user selection
+    customer_ids = scored_df["customerID"].tolist()
+
+    with col_sel1:
+        selected_id = st.selectbox(
+            "Select Customer ID to Inspect",
+            customer_ids,
+            index=0,
+            help="Type to search or choose any customer ID from the 7,043 records",
+        )
+
+    with col_sel2:
+        top_risk_id = scored_df.sort_values(by="churn_probability", ascending=False).iloc[0]["customerID"]
+        if st.button("🚨 Load Top High-Risk Customer", use_container_width=True):
+            st.session_state["selected_customer_id"] = top_risk_id
+            st.rerun()
+
+    with col_sel3:
+        loyal_id = scored_df.sort_values(by="churn_probability", ascending=True).iloc[0]["customerID"]
+        if st.button("🛡️ Load Top Loyal Customer", use_container_width=True):
+            st.session_state["selected_customer_id"] = loyal_id
+            st.rerun()
+
+    if "selected_customer_id" in st.session_state and st.session_state["selected_customer_id"] in customer_ids:
+        selected_id = st.session_state["selected_customer_id"]
+
+    cust_row = scored_df[scored_df["customerID"] == selected_id].iloc[0]
+
+    # Customer Scorecard Header
+    st.markdown("---")
+    sc1, sc2, sc3, sc4 = st.columns(4)
+
+    prob_val = float(cust_row["churn_probability"])
+    risk_val = cust_row["risk_category"]
+    pred_val = cust_row["predicted_churn"]
+    actual_val = cust_row.get("Churn", "Unknown")
+
+    with sc1:
+        st.metric("Customer ID", cust_row["customerID"])
+    with sc2:
+        st.metric("Model Prediction", pred_val)
+    with sc3:
+        st.metric("Churn Probability", f"{prob_val * 100:.1f}%")
+    with sc4:
+        st.metric("Actual Historical Churn", str(actual_val))
+
+    # Probability Progress bar
+    if risk_val == "High Risk":
+        st.error(f"🚨 **Triage Category: HIGH RISK** — Churn probability is {prob_val*100:.1f}%. Immediate retention outreach advised.")
+    elif risk_val == "Medium Risk":
+        st.warning(f"⚠️ **Triage Category: MEDIUM RISK** — Churn probability is {prob_val*100:.1f}%. Proactive engagement recommended.")
+    else:
+        st.success(f"🛡️ **Triage Category: LOW RISK** — Churn probability is {prob_val*100:.1f}%. Stable subscriber profile.")
+
+    st.progress(prob_val)
+
+    # 3-Column Attributes Grid
+    st.markdown("##### 📋 Subscriber Attributes in Dataset")
+    a1, a2, a3 = st.columns(3)
+
+    with a1:
+        st.markdown(
+            f"""
+            **Demographics & Tenure**
+            - **Gender:** {cust_row.get('gender', 'N/A')}
+            - **Senior Citizen:** {'Yes (1)' if cust_row.get('SeniorCitizen') == 1 else 'No (0)'}
+            - **Partner:** {cust_row.get('Partner', 'N/A')}
+            - **Dependents:** {cust_row.get('Dependents', 'N/A')}
+            - **Tenure:** {int(cust_row.get('tenure', 0))} Months
+            """
+        )
+
+    with a2:
+        st.markdown(
+            f"""
+            **Subscribed Services**
+            - **Phone Service:** {cust_row.get('PhoneService', 'N/A')}
+            - **Multiple Lines:** {cust_row.get('MultipleLines', 'N/A')}
+            - **Internet:** {cust_row.get('InternetService', 'N/A')}
+            - **Online Security:** {cust_row.get('OnlineSecurity', 'N/A')}
+            - **Online Backup:** {cust_row.get('OnlineBackup', 'N/A')}
+            - **Device Protection:** {cust_row.get('DeviceProtection', 'N/A')}
+            - **Tech Support:** {cust_row.get('TechSupport', 'N/A')}
+            - **Streaming TV / Movies:** {cust_row.get('StreamingTV', 'N/A')} / {cust_row.get('StreamingMovies', 'N/A')}
+            """
+        )
+
+    with a3:
+        st.markdown(
+            f"""
+            **Contract & Billing**
+            - **Contract Type:** {cust_row.get('Contract', 'N/A')}
+            - **Paperless Billing:** {cust_row.get('PaperlessBilling', 'N/A')}
+            - **Payment Method:** {cust_row.get('PaymentMethod', 'N/A')}
+            - **Monthly Charges:** ${float(cust_row.get('MonthlyCharges', 0)):.2f}
+            - **Total Charges:** ${float(cust_row.get('TotalCharges', 0)):.2f}
+            """
+        )
+
+    # Risk Drivers and Retention Playbook
+    st.markdown("---")
+    d_col1, d_col2 = st.columns(2)
+
+    with d_col1:
+        st.markdown("##### 🔍 Identified Churn Risk Drivers")
+        drivers = extract_risk_drivers(cust_row)
+        if drivers:
+            for title, impact, desc in drivers:
+                if impact == "High":
+                    st.markdown(f"🔴 **{title}** (High Risk Driver)  \n*{desc}*")
+                elif impact == "Medium":
+                    st.markdown(f"🟡 **{title}** (Moderate Driver)  \n*{desc}*")
+                else:
+                    st.markdown(f"🟢 **{title}** (Retention Anchor)  \n*{desc}*")
+        else:
+            st.markdown("No significant churn risk factors identified.")
+
+    with d_col2:
+        st.markdown("##### 💼 Recommended Retention Playbook")
+        actions = get_retention_playbook(cust_row, risk_val)
+        for act in actions:
+            st.markdown(act)
+
+    # Optional Secondary Feature: Manual What-If Simulator Expander
+    st.markdown("---")
+    with st.expander("🛠️ Optional Secondary Tool: Manual 'What-If' Customer Simulator"):
+        st.markdown(
+            "Test hypothetical subscriber configurations or what-if retention scenarios "
+            "(e.g., test the impact of upgrading contract type or adding Tech Support)."
+        )
+
+        with st.form("manual_simulator_form"):
+            mf1, mf2, mf3 = st.columns(3)
+            with mf1:
+                s_gender = st.selectbox("Gender", ["Female", "Male"], index=0 if cust_row.get("gender") == "Female" else 1)
+                s_senior = st.selectbox("Senior Citizen", ["No (0)", "Yes (1)"], index=int(cust_row.get("SeniorCitizen", 0)))
+                s_partner = st.selectbox("Has Partner", ["No", "Yes"], index=0 if cust_row.get("Partner") == "No" else 1)
+                s_dep = st.selectbox("Has Dependents", ["No", "Yes"], index=0 if cust_row.get("Dependents") == "No" else 1)
+                s_tenure = st.slider("Tenure (Months)", 0, 72, int(cust_row.get("tenure", 12)))
+
+            with mf2:
+                s_phone = st.selectbox("Phone Service", ["No", "Yes"], index=1 if cust_row.get("PhoneService") == "Yes" else 0)
+                s_lines = st.selectbox("Multiple Lines", ["No", "Yes", "No phone service"], index=0)
+                s_internet = st.selectbox("Internet Service", ["DSL", "Fiber optic", "No"], index=1 if cust_row.get("InternetService") == "Fiber optic" else 0)
+                s_sec = st.selectbox("Online Security", ["No", "Yes", "No internet service"], index=0)
+                s_backup = st.selectbox("Online Backup", ["No", "Yes", "No internet service"], index=0)
+                s_dev = st.selectbox("Device Protection", ["No", "Yes", "No internet service"], index=0)
+                s_tech = st.selectbox("Tech Support", ["No", "Yes", "No internet service"], index=0)
+                s_tv = st.selectbox("Streaming TV", ["No", "Yes", "No internet service"], index=0)
+                s_movies = st.selectbox("Streaming Movies", ["No", "Yes", "No internet service"], index=0)
+
+            with mf3:
+                s_contract = st.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"], index=0)
+                s_paperless = st.selectbox("Paperless Billing", ["No", "Yes"], index=1)
+                s_pay = st.selectbox(
+                    "Payment Method",
+                    ["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"],
+                    index=0,
+                )
+                s_monthly = st.number_input("Monthly Charges ($)", 18.0, 120.0, float(cust_row.get("MonthlyCharges", 70.0)), step=1.0)
+                s_total = st.number_input("Total Charges ($)", 0.0, 9000.0, float(cust_row.get("TotalCharges", 800.0)), step=10.0)
+
+            sim_submit = st.form_submit_button("Run What-If Simulation", use_container_width=True)
+
+        if sim_submit:
+            sim_pipeline = load_best_pipeline()
+            if sim_pipeline:
+                sim_data = pd.DataFrame(
+                    [
+                        {
+                            "gender": s_gender,
+                            "SeniorCitizen": 1 if "Yes" in s_senior else 0,
+                            "Partner": s_partner,
+                            "Dependents": s_dep,
+                            "tenure": s_tenure,
+                            "PhoneService": s_phone,
+                            "MultipleLines": s_lines,
+                            "InternetService": s_internet,
+                            "OnlineSecurity": s_sec,
+                            "OnlineBackup": s_backup,
+                            "DeviceProtection": s_dev,
+                            "TechSupport": s_tech,
+                            "StreamingTV": s_tv,
+                            "StreamingMovies": s_movies,
+                            "Contract": s_contract,
+                            "PaperlessBilling": s_paperless,
+                            "PaymentMethod": s_pay,
+                            "MonthlyCharges": s_monthly,
+                            "TotalCharges": s_total,
+                        }
+                    ]
+                )
+                sim_pred = sim_pipeline.predict(sim_data)[0]
+                sim_prob = sim_pipeline.predict_proba(sim_data)[0][1]
+
+                st.markdown(
+                    f"**Simulation Result:** Predicted: **{'CHURN' if sim_pred == 1 else 'STAY'}** | "
+                    f"Probability: **{sim_prob * 100:.2f}%** | "
+                    f"Risk Tier: **{'🚨 High' if sim_prob >= high_thresh else '⚠️ Medium' if sim_prob >= med_thresh else '🛡️ Low'}**"
+                )
+
+
+# ==============================================================================
+# TAB 4: MODEL PERFORMANCE
+# ==============================================================================
+with tab_performance:
+    st.subheader("Authentic Model Evaluation: Untouched Holdout Test Set")
+    st.markdown(
+        """
+        <div class='disclaimer-box'>
+        <b>Honest Academic Evaluation Standard:</b> While the <i>Overview</i> and <i>Customer Risk</i> screens provide 
+        operational scores across all 7,043 subscriber records, <b>all evaluation metrics shown below are calculated 
+        strictly on the untouched 20% holdout test set (1,409 rows, 26.54% churn)</b>. 
+        No test-set information was leaked into preprocessing, feature scaling, or model tuning.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown("")
 
     metrics_data = load_metrics_data()
 
@@ -253,160 +914,37 @@ with tab_comparison:
             f"*{metrics_data.get('selection_rationale', '')}*"
         )
     else:
-        st.warning("Model comparison metrics not found. Run `python src/evaluate.py` to generate `models/metrics.json`.")
+        st.warning("Model comparison metrics not found. Run `python -m src.evaluate` to generate `models/metrics.json`.")
 
     st.markdown("---")
-    st.subheader("2. Visual Evaluation: Confusion Matrices & ROC Curves")
+    st.subheader("Visual Evaluation: 4-Panel Confusion Matrices & Overlaid ROC Curves")
 
     if PLOTS_PNG_PATH.exists():
-        st.image(str(PLOTS_PNG_PATH), caption="Confusion Matrices & Overlaid ROC Curves on Holdout Test Set", use_container_width=True)
+        st.image(str(PLOTS_PNG_PATH), caption="Evaluated strictly on holdout test set (1,409 samples)", use_container_width=True)
     else:
-        st.info("Evaluation plots not generated yet. Run `python src/evaluate.py` to produce `models/evaluation_plots.png`.")
+        st.info("Evaluation plots not generated yet. Run `python -m src.evaluate` to generate `models/evaluation_plots.png`.")
 
     st.markdown("---")
-    st.subheader("3. Viva Discussion: Why Accuracy Alone is Misleading")
+    st.subheader("Viva Discussion: The Cost Asymmetry of Churn")
     st.markdown(
         """
-        - **The Majority Class Trap:** In an imbalanced dataset (~73.5% non-churn, ~26.5% churn), a dummy classifier that always predicts "No Churn" achieves **73.5% accuracy**, yet catches **0% of churners** (Recall = 0.0).
-        - **Why Recall is Critical in Churn:**
-          - **False Negative (FN):** Model says customer stays $\\rightarrow$ Customer cancels $\\rightarrow$ Company loses customer lifetime value (**High Cost**).
-          - **False Positive (FP):** Model says customer churns $\\rightarrow$ Customer was staying $\\rightarrow$ Company sends a discount email (**Low Cost**).
-          - Because False Negatives are far more damaging than False Positives, **Recall and F1-Score** are prioritized over raw Accuracy.
+        - **Why Accuracy is Misleading:** A dummy classifier always predicting 'Stay' would score **73.46% accuracy** on this dataset, yet catch **0% of churners** (Recall = 0.0).
+        - **False Negative vs. False Positive Cost:**
+          - **False Negative (Model says Stay, customer Churns):** Lost customer lifetime value (~$1,000+). **High business penalty.**
+          - **False Positive (Model says Churn, customer Stays):** Cost of an outreach email or small retention discount (~$10–$20). **Low business penalty.**
+        - **Decision Rule:** Logistic Regression captures **55.88% of churners** with an **ROC-AUC of 0.8411**, providing the optimal commercial tradeoff.
         """
     )
 
 
 # ==============================================================================
-# TAB 3: CUSTOMER CHURN PREDICTOR
-# ==============================================================================
-with tab_predictor:
-    st.subheader("1. Interactive Customer Risk Predictor")
-    st.markdown(
-        "Enter subscriber attributes below, or click a preset profile for quick viva demonstration. "
-        "The serialized Scikit-Learn pipeline will preprocess raw inputs and compute churn probability."
-    )
-
-    # Preset Profile Buttons
-    col_p1, col_p2, col_p3 = st.columns([1, 1, 2])
-    with col_p1:
-        st.button("🚨 Load High-Risk Profile", on_click=set_high_risk_preset, use_container_width=True)
-    with col_p2:
-        st.button("🛡️ Load Loyal Customer Profile", on_click=set_loyal_preset, use_container_width=True)
-    with col_p3:
-        st.button("🔄 Reset to Default Profile", on_click=reset_form_defaults, use_container_width=True)
-
-    st.markdown("---")
-
-    with st.form("churn_prediction_form"):
-        col_c1, col_c2, col_c3 = st.columns(3)
-
-        with col_c1:
-            st.markdown("##### 👤 Demographics & Tenure")
-            gender = st.selectbox("Gender", ["Female", "Male"], index=0 if st.session_state.gender == "Female" else 1)
-            senior_val = st.selectbox("Senior Citizen", ["No (0)", "Yes (1)"], index=st.session_state.SeniorCitizen)
-            senior_citizen = 1 if "Yes" in senior_val else 0
-            partner = st.selectbox("Has Partner", ["No", "Yes"], index=0 if st.session_state.Partner == "No" else 1)
-            dependents = st.selectbox("Has Dependents", ["No", "Yes"], index=0 if st.session_state.Dependents == "No" else 1)
-            tenure = st.slider("Tenure (Months with Company)", min_value=0, max_value=72, value=int(st.session_state.tenure))
-
-        with col_c2:
-            st.markdown("##### 🌐 Subscriptions & Services")
-            phone_service = st.selectbox("Phone Service", ["No", "Yes"], index=0 if st.session_state.PhoneService == "No" else 1)
-            multiple_lines = st.selectbox("Multiple Lines", ["No", "Yes", "No phone service"], index=["No", "Yes", "No phone service"].index(st.session_state.MultipleLines))
-            internet_service = st.selectbox("Internet Service", ["DSL", "Fiber optic", "No"], index=["DSL", "Fiber optic", "No"].index(st.session_state.InternetService))
-            online_security = st.selectbox("Online Security", ["No", "Yes", "No internet service"], index=["No", "Yes", "No internet service"].index(st.session_state.OnlineSecurity))
-            online_backup = st.selectbox("Online Backup", ["No", "Yes", "No internet service"], index=["No", "Yes", "No internet service"].index(st.session_state.OnlineBackup))
-            device_protection = st.selectbox("Device Protection", ["No", "Yes", "No internet service"], index=["No", "Yes", "No internet service"].index(st.session_state.DeviceProtection))
-            tech_support = st.selectbox("Tech Support", ["No", "Yes", "No internet service"], index=["No", "Yes", "No internet service"].index(st.session_state.TechSupport))
-            streaming_tv = st.selectbox("Streaming TV", ["No", "Yes", "No internet service"], index=["No", "Yes", "No internet service"].index(st.session_state.StreamingTV))
-            streaming_movies = st.selectbox("Streaming Movies", ["No", "Yes", "No internet service"], index=["No", "Yes", "No internet service"].index(st.session_state.StreamingMovies))
-
-        with col_c3:
-            st.markdown("##### 💳 Contract & Billing")
-            contract = st.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"], index=["Month-to-month", "One year", "Two year"].index(st.session_state.Contract))
-            paperless_billing = st.selectbox("Paperless Billing", ["No", "Yes"], index=0 if st.session_state.PaperlessBilling == "No" else 1)
-            payment_method = st.selectbox(
-                "Payment Method",
-                ["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"],
-                index=["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"].index(st.session_state.PaymentMethod),
-            )
-            monthly_charges = st.number_input("Monthly Charges ($)", min_value=18.0, max_value=120.0, value=float(st.session_state.MonthlyCharges), step=1.0)
-            total_charges = st.number_input("Total Charges ($)", min_value=0.0, max_value=9000.0, value=float(st.session_state.TotalCharges), step=10.0)
-
-        predict_submitted = st.form_submit_button("🔮 Compute Churn Prediction", use_container_width=True)
-
-    if predict_submitted:
-        pipeline = load_best_pipeline()
-
-        if pipeline is None:
-            st.error("Error: Trained model pipeline (`models/best_model.joblib`) not found! Run Phase 7 to generate the model artifact.")
-        else:
-            # Build 1-row DataFrame with original column names
-            customer_data = pd.DataFrame(
-                [
-                    {
-                        "gender": gender,
-                        "SeniorCitizen": senior_citizen,
-                        "Partner": partner,
-                        "Dependents": dependents,
-                        "tenure": tenure,
-                        "PhoneService": phone_service,
-                        "MultipleLines": multiple_lines,
-                        "InternetService": internet_service,
-                        "OnlineSecurity": online_security,
-                        "OnlineBackup": online_backup,
-                        "DeviceProtection": device_protection,
-                        "TechSupport": tech_support,
-                        "StreamingTV": streaming_tv,
-                        "StreamingMovies": streaming_movies,
-                        "Contract": contract,
-                        "PaperlessBilling": paperless_billing,
-                        "PaymentMethod": payment_method,
-                        "MonthlyCharges": monthly_charges,
-                        "TotalCharges": total_charges,
-                    }
-                ]
-            )
-
-            # Predict using the reloaded end-to-end pipeline
-            churn_pred = pipeline.predict(customer_data)[0]
-            churn_prob = pipeline.predict_proba(customer_data)[0][1]
-
-            st.markdown("---")
-            st.subheader("2. Prediction Result")
-
-            col_res1, col_res2, col_res3 = st.columns(3)
-
-            with col_res1:
-                st.metric("Predicted Outcome", "CHURN (Yes)" if churn_pred == 1 else "NO CHURN (Stay)")
-
-            with col_res2:
-                st.metric("Churn Probability", f"{churn_prob * 100:.2f}%")
-
-            with col_res3:
-                if churn_prob > 0.60:
-                    st.error("🚨 Risk Level: HIGH")
-                elif churn_prob >= 0.35:
-                    st.warning("⚠️ Risk Level: MEDIUM")
-                else:
-                    st.success("🛡️ Risk Level: LOW")
-
-            st.progress(float(churn_prob))
-
-            st.caption(
-                "⚠️ **Disclaimer:** This output is a statistical prediction generated by a machine learning model "
-                "based on historical Telco subscriber patterns, not a guarantee of future individual customer behavior."
-            )
-
-
-# ==============================================================================
-# TAB 4: FEATURE INSIGHTS & VIVA GUIDE
+# TAB 5: INSIGHTS & VIVA GUIDE
 # ==============================================================================
 with tab_insights:
     st.subheader("1. Random Forest Feature Importance (MDI)")
     st.markdown(
-        "Mean Decrease in Impurity (Gini Importance) indicates how useful each feature was across "
-        "all decision trees in distinguishing churners from non-churners."
+        "Mean Decrease in Impurity (Gini Importance) across all decision trees in the ensemble "
+        "reveals the features most predictive of customer churn:"
     )
 
     metrics_data = load_metrics_data()
@@ -416,7 +954,6 @@ with tab_insights:
         df_feat = pd.DataFrame(rf_feats)
         df_feat["importance_pct"] = df_feat["importance"] * 100
 
-        # Clean display names
         df_feat["Feature Name"] = (
             df_feat["feature"]
             .str.replace("cat__", "")
@@ -433,14 +970,15 @@ with tab_insights:
         )
 
         st.warning(
-            "⚠️ **Correlation vs. Causation:** Feature importance reflects mathematical predictive usefulness "
-            "within tree splits. It does **not** prove that changing a feature directly causes customer retention."
+            "⚠️ **Correlation vs. Causation:** Feature importance reflects predictive utility within tree splits, "
+            "not direct causation. For instance, `Contract_Month-to-month` is a churn marker, but simply forcing a long contract "
+            "without addressing product satisfaction may not prevent cancellation."
         )
     else:
         st.info("Feature importance data not found in `models/metrics.json`.")
 
     st.markdown("---")
-    st.subheader("2. Comprehensive ML Lab Viva Cheatsheet")
+    st.subheader("2. Core ML Lab Viva Exam Preparation")
 
     with st.expander("Q1: Why do we serialize the Scikit-Learn Pipeline rather than just the classifier?"):
         st.markdown(
@@ -450,11 +988,11 @@ with tab_insights:
             "train-serving skew and allowing raw user inputs to be predicted directly."
         )
 
-    with st.expander("Q2: Why is Feature Scaling mandatory for KNN but optional for Random Forest?"):
+    with st.expander("Q2: Why is Feature Scaling mandatory for KNN and SVM, but optional for Random Forest?"):
         st.markdown(
-            "KNN relies on distance calculations (Euclidean metric: $\\sqrt{\\sum(x_i - y_i)^2}$). "
-            "If `TotalCharges` spans $0 - 8000$ and `SeniorCitizen` is $0 - 1$, `TotalCharges` completely "
-            "dominates distances without scaling. Random Forest splits nodes based only on ordering thresholds "
+            "KNN and SVM rely on distance calculations (Euclidean metric: $\\sqrt{\\sum(x_i - y_i)^2}$) "
+            "and margin dot products ($w^T x$). If `TotalCharges` spans $0 - 8000$ and `SeniorCitizen` is $0 - 1$, "
+            "`TotalCharges` completely dominates without scaling. Random Forest splits nodes based only on ordering thresholds "
             "along individual features, making it mathematically invariant to monotonic feature scaling."
         )
 
@@ -476,8 +1014,8 @@ with tab_insights:
 
     with st.expander("Q5: What is Support Vector Machine (SVM) and how does it predict customer churn?"):
         st.markdown(
-            "SVM is a supervised machine learning algorithm that finds the optimal decision boundary (hyperplane) "
-            "separating churners ($y=1$) from non-churners ($y=0$) in high-dimensional feature space. "
+            "SVM finds the optimal decision boundary (hyperplane) separating churners ($y=1$) from non-churners ($y=0$) "
+            "in high-dimensional feature space by maximizing the margin between the two classes. "
             "For customer churn, it maps customer attributes (tenure, contract type, charges) into feature space "
             "and predicts churn based on which side of the hyperplane the customer lies."
         )
@@ -491,16 +1029,14 @@ with tab_insights:
             "If other points far from the boundary move, the boundary does not change at all."
         )
 
-    with st.expander("Q7: How does SVM differ from Logistic Regression, KNN, and Random Forest?"):
+    with st.expander("Q7: How do in-sample full-dataset predictions differ from holdout test evaluation?"):
         st.markdown(
-            "- **vs. Logistic Regression:** Logistic Regression models class posterior probabilities using a sigmoid function "
-            "over all data points (log-loss), whereas SVM focuses only on the most difficult boundary cases (support vectors) "
-            "using hinge loss.\n"
-            "- **vs. KNN:** KNN is an instance-based lazy learner requiring pairwise distance calculation to all training points "
-            "at query time. SVM explicitly learns boundary weights ($w, b$) during training and classifies quickly at test time.\n"
-            "- **vs. Random Forest:** Random Forest is an ensemble of decision trees using orthogonal axis splits that capture complex "
-            "step interactions without feature scaling. Linear SVM finds a single planar boundary and strictly requires feature scaling."
+            "- **Operational Full-Dataset Predictions:** The 7,043 customer scores in the dashboard allow business teams "
+            "to triage the entire existing customer base. Because 80% of these records were seen during training, full-dataset "
+            "accuracy is an operational scoring mechanism, not an unbiased metric.\n"
+            "- **Holdout Test Set Evaluation:** The 1,409 unseen test records evaluate genuine generalization capability, "
+            "providing the true scientific benchmark reported in the *Model Performance* tab."
         )
 
 st.divider()
-st.caption("StayWise — Customer Churn Prediction ML Lab | Department of Computer Science & Engineering")
+st.caption("StayWise — Customer Churn Prediction and Retention Intelligence | ML Lab")

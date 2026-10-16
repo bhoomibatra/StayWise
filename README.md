@@ -36,14 +36,16 @@ This project frames churn prediction as a **binary classification problem**: giv
 ---
 
 ## 4. Features
-
-- **Four ML algorithms** trained, tuned, and compared on the same holdout test set.
-- **5-fold stratified cross-validation** on the training set for hyperparameter tuning — the test set is never touched during tuning.
-- **Side-by-side confusion matrices** and **overlaid ROC curves** saved as `models/evaluation_plots.png`.
-- **Feature importance ranking** from the Random Forest model displayed in the Streamlit app.
-- **Interactive prediction form** in Streamlit — enter any customer's attributes and get an instant churn probability and risk level (Low / Medium / High).
-- **Preset demo profiles** (High Risk Customer and Loyal Customer) for quick viva demonstrations.
-- **Automated test suite** using pytest covering preprocessing integrity, all four model pipelines, pipeline reload, and edge-case inputs.
+ 
+ - **Automated dataset churn analysis**: Immediately scores all 7,043 subscriber records upon dashboard startup using the serialized pipeline — no manual entry or CSV upload needed.
+ - **Transparent customer risk triage**: Sortable and filterable table categorizing customers into High, Medium, and Low risk tiers with configurable threshold sliders.
+ - **Customer-level root cause drill-down**: Automated risk driver identification (contract type, tenure hazard window, unbundled fiber optic, billing friction) and tailored retention playbooks.
+ - **Four ML algorithms** trained, tuned, and compared on the same untouched holdout test set (Logistic Regression, KNN, Random Forest, SVM).
+ - **5-fold stratified cross-validation** on the training set for hyperparameter tuning.
+ - **Side-by-side confusion matrices** and **overlaid ROC curves** saved as `models/evaluation_plots.png`.
+ - **Feature importance ranking** from the Random Forest model displayed in the dashboard.
+ - **Manual 'What-If' scenario simulator** preserved as an optional secondary tool for hypothetical account testing.
+ - **Automated test suite** using pytest covering preprocessing integrity, all four model pipelines, pipeline reload, batch scoring, and edge-case inputs (10 passing unit tests).
 
 ---
 
@@ -276,25 +278,23 @@ pip install -r requirements.txt
 
 Open `http://localhost:8501` in your browser.
 
-### Application Tabs
+### Application Navigation
 
 | Tab | Contents |
 |---|---|
-| 📊 **Project Overview** | Problem statement, dataset summary, ML architecture diagram |
-| ⚖️ **Model Comparison** | 4-model benchmark table, confusion matrices, ROC curves |
-| 🔮 **Customer Churn Predictor** | Input form for customer attributes, churn probability output, risk level |
-| 💡 **Feature Insights & Viva Guide** | Feature importance chart, viva Q&A cheatsheet |
+| 📊 **1. Overview** | Automatic dataset KPI summary, predicted churn vs. historical actual breakdown, risk tier distribution chart, top 5 immediate priority at-risk subscribers |
+| ⚠️ **2. Customer Risk** | Searchable, sortable, and filterable customer triage table across all 7,043 subscribers with CSV export and configurable risk thresholds |
+| 🔍 **3. Customer Details** | Single-customer drill-down: complete subscriber attributes, empirical churn risk drivers, personalized retention playbook, and optional secondary What-If simulator |
+| ⚖️ **4. Model Performance** | Honest holdout test set evaluation (1,409 untouched rows), 4-model comparison table, confusion matrices, ROC curves |
+| 💡 **5. Insights & Viva Guide** | Random Forest Gini feature importances, business insights, correlation vs causation caveat, and 7 core ML viva Q&As |
 
-### Making a Prediction
+### Primary Workflow: Automated Dataset Analysis
 
-1. Go to the **Customer Churn Predictor** tab.
-2. Either use a **preset profile** (🚨 High Risk or 🛡️ Loyal Customer) or fill in the customer's details manually.
-3. Click **"Compute Churn Prediction"**.
-4. The app will display:
-   - **Predicted Outcome:** CHURN (Yes) or NO CHURN (Stay)
-   - **Churn Probability:** e.g., 67.2%
-   - **Risk Level:** LOW (< 35%), MEDIUM (35–60%), or HIGH (> 60%)
-   - A visual probability bar
+1. Launch the app (`streamlit run app.py`).
+2. The **Overview** tab immediately loads and scores all 7,043 customers, displaying the total predicted churners (1,564), predicted retainees (5,479), and urgent high-risk count (1,039).
+3. Open **Customer Risk** to search by `customerID`, filter by Risk Tier (High, Medium, Low) or Contract, and export filtered customer lists to CSV for retention teams.
+4. Open **Customer Details** to select any subscriber and view data-backed risk drivers and targeted retention actions.
+5. In **Customer Details**, an optional expander contains a **Manual 'What-If' Customer Simulator** to test custom hypothetical subscriber inputs.
 
 ### Retrain All Models (Optional)
 

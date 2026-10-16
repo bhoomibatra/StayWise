@@ -189,3 +189,34 @@ def test_edge_case_inputs():
     assert len(probs) == 2
     for p in probs:
         assert 0.0 <= p[1] <= 1.0
+
+
+def test_dataset_scoring_and_risk_categorization():
+    """Verify that full-dataset batch scoring generates valid predictions, probabilities, and risk tiers."""
+    from app import extract_risk_drivers, get_retention_playbook, run_dataset_scoring
+
+    scored_df, err = run_dataset_scoring()
+    assert err is None, f"Scoring error: {err}"
+    assert scored_df is not None
+    assert len(scored_df) == 7043
+
+    # Predictions & probabilities validation
+    assert set(scored_df["predicted_churn"].unique()).issubset({"Churn", "Stay"})
+    assert set(scored_df["risk_category"].unique()).issubset({"High Risk", "Medium Risk", "Low Risk"})
+    assert scored_df["churn_probability"].isna().sum() == 0
+    assert ((scored_df["churn_probability"] >= 0.0) & (scored_df["churn_probability"] <= 1.0)).all()
+
+    # Verify ID column preservation
+    assert "customerID" in scored_df.columns
+    assert "Churn" in scored_df.columns
+
+    # Verify risk driver extraction and retention playbook
+    first_customer = scored_df.iloc[0]
+    drivers = extract_risk_drivers(first_customer)
+    assert isinstance(drivers, list)
+    assert len(drivers) > 0
+
+    playbook = get_retention_playbook(first_customer, "High Risk")
+    assert isinstance(playbook, list)
+    assert len(playbook) > 0
+
